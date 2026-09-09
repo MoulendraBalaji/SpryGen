@@ -11,7 +11,7 @@ export default defineConfig({
       outDir: "dist-electron",
       emptyOutDir: true,
       rollupOptions: {
-        external: ["better-sqlite3", "keytar"]
+        external: ["better-sqlite3", "keytar", "pg"]
       }
     }
   },
