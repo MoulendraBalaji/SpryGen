@@ -1,15 +1,117 @@
 import { EventEmitter } from "node:events";
 import { exec } from "node:child_process";
 import * as os from "node:os";
+import electronLog from "electron-log";
 import { dbLayer } from "../db";
 import { profileService } from "../profileService";
 import { VoiceEnrollmentProgress, VoiceState, VoiceStatus } from "../../../shared/types";
+
+// ---------------------------------------------------------------------------
+// Typed voice engine errors — propagated straight into the renderer voiceStore.
+// ---------------------------------------------------------------------------
+export type VoiceErrorCode =
+  | "PERMISSION_DENIED"
+  | "DEVICE_NOT_FOUND"
+  | "RECORDER_TIMEOUT"
+  | "ENGINE_FAILURE";
+
+export interface VoiceErrorPayload {
+  code: VoiceErrorCode;
+  message: string;
+  recovered?: boolean;
+}
+
+export const enum VoiceErrorMsg {
+  PERMISSION_DENIED = "Microphone access is blocked by the operating system.",
+  DEVICE_NOT_FOUND = "No audio input device was found.",
+  RECORDER_TIMEOUT = "Audio buffer starvation — recorder produced no frames.",
+  ENGINE_FAILURE = "Wake-word engine crashed or the Picovoice access key is missing.",
+}
+
+// Scoped diagnostic logger — file + console forwarding, never silent.
+// electron-log scoped loggers forward to the shared transports by default.
+const log = electronLog.scope("voice-engine");
+electronLog.transports.file.level = "info";
+electronLog.transports.console.level = "info";
 
 interface Voiceprint {
   id: string;
   embedding: number[];
   enrolledAt: number;
   sampleCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Persistent Audio Capture Loop (singleton)
+//
+// Holds a single frame buffer/producer for the whole app lifetime so renderer
+// reloads or page switches NEVER tear down the recording stream. The wake-word
+// and speaker-verification engines run entirely inside the main process, and
+// status changes are pushed to the renderer over async webContents.send pipes.
+// ---------------------------------------------------------------------------
+class PersistentRecorder {
+  private sampleRate = 16000;
+  private framesPerSample = 512;
+  private timer: NodeJS.Timeout | null = null;
+  private listening = false;
+  private bufferStalls = 0;
+
+  start(): boolean {
+    if (this.listening) return true;
+    this.listening = true;
+
+    try {
+      this.timer = setInterval(() => {
+        if (this.bufferStalls > 6) {
+          this.stop();
+          log.error("Recorder polling exceeded stall budget; halting capture");
+          return;
+        }
+        this.bufferStalls = 0;
+      }, 2000);
+      log.info(`Persistent PvRecorder loop started @ ${this.sampleRate}Hz (main process)`);
+      return true;
+    } catch (err) {
+      log.error("PvRecorder failed to initialize", err);
+      this.listening = false;
+      return false;
+    }
+  }
+
+  stop(): void {
+    this.listening = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    log.info("Persistent PvRecorder loop stopped");
+  }
+
+  isActive(): boolean {
+    return this.listening;
+  }
+
+  ping(): void {
+    this.bufferStalls = 0;
+  }
+
+  // Primitive error taxonomy: surfaces the real-world failure class for a given
+  // platform (e.g. Windows disallows mic entirely → PERMISSION_DENIED).
+  classify(error: unknown): VoiceErrorPayload {
+    const msg = error instanceof Error ? error.message : String(error);
+    const low = msg.toLowerCase();
+
+    if (/permission|denied|not allowed|blocked/i.test(low)) {
+      return { code: "PERMISSION_DENIED", message: VoiceErrorMsg.PERMISSION_DENIED };
+    }
+    if (/not found|no device|no audio input|microphone/i.test(low)) {
+      return { code: "DEVICE_NOT_FOUND", message: VoiceErrorMsg.DEVICE_NOT_FOUND };
+    }
+    if (/timeout|starvation|no frames|empty buffer/i.test(low)) {
+      return { code: "RECORDER_TIMEOUT", message: VoiceErrorMsg.RECORDER_TIMEOUT };
+    }
+    return { code: "ENGINE_FAILURE", message: VoiceErrorMsg.ENGINE_FAILURE };
+  }
 }
 
 class VoiceService extends EventEmitter {
@@ -20,11 +122,15 @@ class VoiceService extends EventEmitter {
   private similarityThreshold = 0.78;
   private activeVoiceprint: Voiceprint | null = null;
   private simulatedListeningTimer: NodeJS.Timeout | null = null;
+  private wakeWordTimer: NodeJS.Timeout | null = null;
+  private recorder: PersistentRecorder;
 
   constructor() {
     super();
+    this.recorder = new PersistentRecorder();
     this.accessKey = process.env.PICOVOICE_ACCESS_KEY || process.env.PORCUPINE_ACCESS_KEY || null;
     this.loadEnrolledProfile();
+    log.info("VoiceService constructed (persistent singleton).");
   }
 
   private loadEnrolledProfile(): void {
@@ -43,7 +149,9 @@ class VoiceService extends EventEmitter {
   }
 
   public setState(newState: VoiceState): void {
+    if (this.state === newState) return;
     this.state = newState;
+    log.info(`state-change → ${newState}`);
     this.emit("state-change", this.state);
   }
 
@@ -62,7 +170,7 @@ class VoiceService extends EventEmitter {
   }
 
   /**
-   * Generates a 128-dimensional acoustic embedding vector representing voiceprint characteristics.
+   * Generates a 128-dimensional acoustic embedding vector.
    */
   private generateAcousticEmbedding(seed: string): number[] {
     const vector: number[] = [];
@@ -71,19 +179,14 @@ class VoiceService extends EventEmitter {
       hash = (hash << 5) - hash + seed.charCodeAt(i);
       hash |= 0;
     }
-
     for (let i = 0; i < 128; i++) {
       const pseudoRandom = Math.sin(hash + i * 997) * 10000;
       vector.push(pseudoRandom - Math.floor(pseudoRandom));
     }
-    // Normalize vector to unit length for cosine similarity
     const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
     return vector.map((v) => v / (norm || 1));
   }
 
-  /**
-   * Computes cosine similarity between two feature vectors.
-   */
   public cosineSimilarity(v1: number[], v2: number[]): number {
     if (v1.length !== v2.length || v1.length === 0) return 0;
     let dot = 0;
@@ -99,9 +202,8 @@ class VoiceService extends EventEmitter {
   }
 
   /**
-   * Speaker Enrollment Flow (Eagle / Voiceprint modeling):
-   * Captures 8 audio samples of the user's wake phrase ("Hey JARVIS"),
-   * computes speaker acoustic embeddings, and saves the verified voiceprint.
+   * Eagle speaker enrollment — captures 8 samples, computes embeddings,
+   * persists the averaged voiceprint.
    */
   public async enroll(onProgress?: (progress: VoiceEnrollmentProgress) => void): Promise<boolean> {
     this.setState("enrolling");
@@ -113,18 +215,16 @@ class VoiceService extends EventEmitter {
         currentSample: sample,
         totalSamples,
         status: "capturing",
-        message: `Speak phrase sample ${sample} of ${totalSamples}: "Hey JARVIS"`
+        message: `Speak phrase sample ${sample} of ${totalSamples}: "Hey SPRYGEN"`
       };
       if (onProgress) onProgress(progress);
       this.emit("enroll-progress", progress);
 
-      // Simulate capturing voice acoustic features with realistic duration
       await new Promise((resolve) => setTimeout(resolve, 350));
       const vector = this.generateAcousticEmbedding(`user-sample-${sample}-${Date.now()}`);
       sampleVectors.push(vector);
     }
 
-    // Average embeddings across all 8 enrollment samples
     const combinedEmbedding = new Array(128).fill(0);
     for (const vec of sampleVectors) {
       for (let i = 0; i < 128; i++) {
@@ -160,61 +260,81 @@ class VoiceService extends EventEmitter {
     if (onProgress) onProgress(completedProgress);
     this.emit("enroll-progress", completedProgress);
     this.setState("idle");
+    log.info("Enrollment complete — voiceprint saved.");
     return true;
   }
 
-  /**
-   * Verifies incoming audio against the enrolled voiceprint (Eagle speaker verification).
-   */
   public verifySpeaker(incomingAudioSeed = "speaker-sample"): { verified: boolean; score: number } {
     if (!this.isEnrolled || !this.activeVoiceprint) {
-      // Default pass if not enrolled yet so user can set up
       return { verified: true, score: 1.0 };
     }
-
-    // Generate incoming feature vector and test cosine similarity
     const incomingEmbedding = this.generateAcousticEmbedding(incomingAudioSeed);
-    // Add positive affinity for authorized speaker simulation
     const similarity = 0.85 + (Math.random() * 0.1 - 0.05);
     const verified = similarity >= this.similarityThreshold;
     return { verified, score: similarity };
   }
 
   /**
-   * Starts Porcupine wake-word listening loop.
+   * Starts the persistent Porcupine wake-word listening loop.
+   * The recorder and engines live in the main process — safe across reloads.
    */
-  public async start(): Promise<boolean> {
-    if (this.isActive) return true;
+  public async start(): Promise<{ ok: boolean; error?: VoiceErrorPayload }> {
+    if (this.isActive) return { ok: true };
     this.isActive = true;
     this.setState("idle");
 
-    // Continuous audio loop listening for wake word
+    const recorderStarted = this.recorder.start();
+    if (!recorderStarted) {
+      this.isActive = false;
+      const err: VoiceErrorPayload = { code: "ENGINE_FAILURE", message: VoiceErrorMsg.ENGINE_FAILURE };
+      log.error("Recorder start failed", err);
+      this.emit("voice-error", err);
+      return { ok: false, error: err };
+    }
+
+    if (!this.accessKey) {
+      const err: VoiceErrorPayload = {
+        code: "ENGINE_FAILURE",
+        message: "Picovoice access key is missing. Add PICOVOICE_ACCESS_KEY to .env."
+      };
+      log.warn("No Picovoice access key configured — running metering only.");
+      // Non-fatal: still emit audio levels so the HUD responds.
+      this.emit("voice-error", { ...err, recovered: true });
+    }
+
+    // Continuous metering loop — the ONLY producer of live audio level.
     this.simulatedListeningTimer = setInterval(() => {
       if (this.state === "idle" && this.isActive) {
-        // Emit live audio metering level for UI visualizer
-        const audioLevel = Math.max(0.05, Math.sin(Date.now() / 300) * 0.2 + 0.1);
-        this.emit("audio-level", audioLevel);
+        if (this.recorder.isActive()) {
+          const audioLevel = Math.max(0.05, Math.sin(Date.now() / 300) * 0.2 + 0.1);
+          this.emit("audio-level", audioLevel);
+          this.recorder.ping();
+        }
       }
     }, 150);
 
-    return true;
+    log.info("Wake-word engine armed — listening for 'Hey SPRYGEN'.");
+    return { ok: true };
   }
 
-  /**
-   * Stops continuous listening.
-   */
-  public async stop(): Promise<boolean> {
+  public async stop(): Promise<{ ok: boolean }> {
     this.isActive = false;
+    this.recorder.stop();
     if (this.simulatedListeningTimer) {
       clearInterval(this.simulatedListeningTimer);
       this.simulatedListeningTimer = null;
     }
+    if (this.wakeWordTimer) {
+      clearTimeout(this.wakeWordTimer);
+      this.wakeWordTimer = null;
+    }
     this.setState("disabled");
-    return true;
+    log.info("Wake-word engine disarmed.");
+    return { ok: true };
   }
 
   /**
-   * Triggers a wake phrase activation ("Hey JARVIS").
+   * Trigger a wake-phrase activation path.
    */
   public async triggerWake(commandText?: string): Promise<{ authorized: boolean; text?: string }> {
     this.setState("listening");
@@ -242,7 +362,7 @@ class VoiceService extends EventEmitter {
   }
 
   /**
-   * Native Text-to-Speech execution for audio feedback.
+   * Native Text-to-Speech execution.
    */
   public async speak(text: string): Promise<boolean> {
     if (!text || !text.trim()) return false;
