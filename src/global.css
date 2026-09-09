@@ -1,71 +1,53 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
 
-/* ============ Console design tokens ============
-   JARVIS renders as an instrument panel, not a chat mascot:
-   near-black graphite / warm paper surfaces, phosphor amber signal,
-   hairline borders instead of blurred shadows, mono + condensed-grotesk type.
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============ SPRYGEN design tokens ============
+   Ultra-crisp, high-performance dark instrument panel.
+   Pure black bases, stark white accents, hairline borders.
+   Inspired by Opera GX + tactical monochrome HUDs.
 */
 
 :root {
-  /* surfaces — dark graphite is default; light = warm paper */
-  --console-bg: #f2efe6;
-  --console-surface: #faf7ef;
-  --console-surface-2: #eae5d8;
-  --console-surface-3: #e0dac9;
+  --console-bg: #000000;
+  --console-surface: #080808;
+  --console-surface-2: #111111;
+  --console-surface-3: #1a1a1a;
 
-  --console-border: #c9c2ae;
-  --console-border-strong: #a89f88;
+  --console-border: rgba(255, 255, 255, 0.12);
+  --console-border-strong: rgba(255, 255, 255, 0.28);
 
   /* signals */
-  --console-accent: #ffb000;
-  --console-accent-ink: #171204;
-  --console-accent-dim: #97700a;
+  --console-accent: #ffffff;
+  --console-accent-ink: #000000;
+  --console-accent-dim: #e0e0e0;
   --console-teal: #5fb8a8;
-  --console-red: #d9584f;
+  --console-red: #e0002a;
+  --console-silver: #e0e0e0;
 
   /* type */
-  --console-text: #211f19;
-  --console-text-muted: #7c7563;
-  --console-text-faint: #a79e87;
+  --console-text: #f0f0f0;
+  --console-text-muted: #9a9a9a;
+  --console-text-faint: #555555;
 
-  /* radius — no pills */
+  /* radius — sharp, angular */
   --console-radius-sm: 2px;
   --console-radius-md: 4px;
   --console-radius-lg: 4px;
 
   /* shadow reserved for modals only */
-  --console-shadow: 0 6px 20px rgba(43, 37, 22, 0.24);
+  --console-shadow: 0 10px 32px rgba(0, 0, 0, 0.7);
 
   /* motion — transform/opacity only, short */
   --console-transition: 140ms ease-out;
   --console-transition-fast: 100ms ease-out;
 
   /* type families */
-  --console-font-mono: "IBM Plex Mono", "JetBrains Mono", "Cascadia Code", Consolas, ui-monospace, SFMono-Regular, monospace;
-  --console-font-head: "Space Grotesk", "Archivo", "Aktiv Grotesk", system-ui, -apple-system, sans-serif;
-  --console-font-body: var(--console-font-mono);
-}
-
-[data-theme="dark"] {
-  --console-bg: #0b0d10;
-  --console-surface: #101316;
-  --console-surface-2: #171b21;
-  --console-surface-3: #1e242b;
-
-  --console-border: #262b33;
-  --console-border-strong: #3a414a;
-
-  --console-accent: #ffb000;
-  --console-accent-ink: #171204;
-  --console-accent-dim: #d1992d;
-  --console-teal: #5fb8a8;
-  --console-red: #d9584f;
-
-  --console-text: #e8e4da;
-  --console-text-muted: #8b9199;
-  --console-text-faint: #565d66;
-
-  --console-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+  --console-font-mono: "JetBrains Mono", "IBM Plex Mono", Consolas, ui-monospace, SFMono-Regular, monospace;
+  --console-font-head: "Syne", "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --console-font-body: "Inter", "Space Grotesk", system-ui, -apple-system, sans-serif;
 }
 
 * {

@@ -1,4 +1,4 @@
-/* ============ Console components ============ */
+/* ============ SPRYGEN components — tactical monochrome HUD ============ */
 
 /* --- modules (cards) --- */
 .console-card {
@@ -49,15 +49,14 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: transform var(--console-transition-fast), opacity var(--console-transition-fast);
+  transition: transform var(--console-transition-fast), border-color var(--console-transition-fast), background var(--console-transition-fast);
 }
 .console-btn:hover {
-  transform: translateY(-1px);
   background: var(--console-surface-2);
   border-color: var(--console-border-strong);
 }
 .console-btn:active {
-  transform: translateY(0) scale(0.98);
+  transform: scale(0.98);
   opacity: 0.85;
 }
 .console-btn:disabled {
@@ -73,6 +72,7 @@
 }
 .console-btn--primary:hover {
   opacity: 0.9;
+  background: var(--console-accent);
 }
 .console-btn--accent {
   background: var(--console-surface-2);
@@ -103,7 +103,7 @@
   padding: 9px 12px;
   outline: none;
   width: 100%;
-  transition: opacity var(--console-transition-fast);
+  transition: border-color var(--console-transition-fast);
 }
 .console-input::placeholder {
   color: var(--console-text-faint);
@@ -122,10 +122,10 @@
   position: relative;
   cursor: pointer;
   padding: 0;
-  transition: transform var(--console-transition-fast), opacity var(--console-transition-fast);
+  transition: transform var(--console-transition-fast), border-color var(--console-transition-fast);
 }
 .console-toggle:hover {
-  transform: translateY(-1px);
+  border-color: var(--console-accent);
 }
 .console-toggle__knob {
   position: absolute;
@@ -165,18 +165,18 @@
   background: var(--console-text-faint);
 }
 .console-badge--healthy {
-  color: var(--console-teal);
-  border-color: var(--console-teal);
+  color: var(--console-accent);
+  border-color: var(--console-accent);
 }
 .console-badge--healthy .console-badge__dot {
-  background: var(--console-teal);
+  background: var(--console-accent);
 }
 .console-badge--degraded {
   color: var(--console-accent-dim);
   border-color: var(--console-accent-dim);
 }
 .console-badge--degraded .console-badge__dot {
-  background: var(--console-accent);
+  background: var(--console-accent-dim);
 }
 .console-badge--dead,
 .console-badge--unauthenticated {
@@ -192,7 +192,7 @@
 .console-modal__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(11, 13, 16, 0.55);
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -270,7 +270,7 @@
   cursor: pointer;
   padding: 2px 6px;
   font-size: 12px;
-  transition: transform var(--console-transition-fast), opacity var(--console-transition-fast);
+  transition: transform var(--console-transition-fast), color var(--console-transition-fast);
 }
 .console-delete:hover {
   color: var(--console-red);
@@ -283,9 +283,9 @@
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  border: 1px solid var(--console-accent-dim);
+  border: 1px solid var(--console-border-strong);
   border-radius: var(--console-radius-sm);
-  background: rgba(255, 176, 0, 0.08);
+  background: var(--console-surface-2);
   font-family: var(--console-font-mono);
   font-size: 12px;
   color: var(--console-accent-dim);
@@ -317,7 +317,7 @@
 .console-palette__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(11, 13, 16, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   justify-content: center;
   padding-top: 12vh;
