@@ -1,6 +1,6 @@
 import { dbLayer } from "./db";
 import { ollamaChat, ollamaAvailable } from "./localLLM";
-import { groqChat, geminiChat, claudeChat } from "./cloudLLM";
+import { groqChat, geminiChat } from "./cloudLLM";
 import { vectorStore } from "./vectorStore";
 import { profileService } from "./profileService";
 import { IntentResult, UserProfile } from "../../shared/types";
@@ -256,8 +256,7 @@ export class SmartRouter {
       // Cloud LLMs first — fast, capable providers in priority order.
       const providers = [
         { key: `${process.env.GROQ_API_KEY ?? ""}`.length ? "groq" : "", fn: () => groqChat(llmSystem, llmMessages) },
-        { key: `${process.env.GEMINI_API_KEY ?? ""}`.length ? "gemini" : "", fn: () => geminiChat(llmSystem, llmMessages) },
-        { key: `${process.env.ANTHROPIC_API_KEY ?? ""}`.length ? "claude" : "", fn: () => claudeChat(llmSystem, llmMessages) }
+        { key: `${process.env.GEMINI_API_KEY ?? ""}`.length ? "gemini" : "", fn: () => geminiChat(llmSystem, llmMessages) }
       ];
       for (const p of providers) {
         if (!p.key) continue;

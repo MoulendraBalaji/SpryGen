@@ -5,7 +5,7 @@ import time
 from typing import Any
 import httpx
 from .base import BaseAgent, AgentMessage, AgentResponse
-from ..config import OLLAMA_URL, ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY
+from ..config import OLLAMA_URL, GEMINI_API_KEY, GROQ_API_KEY
 from ..services.automation import automation
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -49,8 +49,6 @@ class ChatAgent(BaseAgent):
         answer = await self._try_groq(messages)
         if answer is None and GEMINI_API_KEY:
             answer = await self._try_gemini(messages)
-        if answer is None and ANTHROPIC_API_KEY:
-            answer = await self._try_claude(messages)
         if answer is None:
             answer = await self._try_ollama(messages)
         if answer is None:
@@ -145,30 +143,6 @@ class ChatAgent(BaseAgent):
             pass
         return None
 
-    async def _try_claude(self, messages: list[dict]) -> str | None:
-        try:
-            async with httpx.AsyncClient(timeout=45) as client:
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": ANTHROPIC_API_KEY,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
-                    json={
-                        "model": "claude-3-5-sonnet-20241022",
-                        "max_tokens": 1600,
-                        "messages": [m for m in messages if m.get("role") != "system"],
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    blocks = data.get("content", [])
-                    return "".join(b.get("text", "") for b in blocks)
-        except Exception:
-            pass
-        return None
-
     async def _try_ollama(self, messages: list[dict]) -> str | None:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -207,4 +181,4 @@ class ChatAgent(BaseAgent):
             return f"Today is {time.strftime('%B %d, %Y')}."
         if "thank" in lower:
             return "You're welcome! Let me know if you need anything else."
-        return "I understand. For the best experience, ensure Groq, Gemini, or an Anthropic API key is configured."
+        return "I understand. For the best experience, ensure a Groq or Gemini API key is configured."

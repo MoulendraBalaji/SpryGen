@@ -62,7 +62,6 @@ export function registerIpc() {
   const ENV_CHECKS: { key: string; alt?: string; label: string }[] = [
     { key: "GROQ_API_KEY", label: "Groq" },
     { key: "GEMINI_API_KEY", label: "Gemini" },
-    { key: "ANTHROPIC_API_KEY", label: "Anthropic" },
     { key: "ELEVENLABS_API_KEY", label: "ElevenLabs Voice" },
     { key: "SPRYGEN_OLLAMA_URL", alt: "JARVIS_OLLAMA_URL", label: "Ollama" },
     { key: "PICOVOICE_ACCESS_KEY", label: "Picovoice" }

@@ -41,13 +41,13 @@
 * **Browser Automation (Selenium + BeautifulSoup)**: Multi-step browser tasks (navigate, click, type, extract, screenshot) with an operator **Kill Switch**, plus a dedicated **Web Scraper** panel.
 * **Web Scraping is a native agent tool**: ask the assistant to "scrape/summarize/analyze `<url>`" and SPRYGEN fetches the page, extracts clean text, and reasons over it with the LLM.
 * **Desktop Actions (PyAutoGUI)**: Screenshot, type, hotkeys, bounded mouse moves and clicks — all running with `FAILSAFE=True` and an abort flag.
-* **Hybrid LLM routing**: Groq → Gemini → Anthropic Claude → local Ollama → deterministic fast-path rules.
+* **Hybrid LLM routing**: Groq → Gemini → local Ollama → deterministic fast-path rules.
 
 ### 🧠 5. Hybrid NLP & Encrypted Persistent Memory
 * **Multi-Tiered Query Engine**:
   1. Instant regex entity extraction and natural language date parsing (`chrono-node`).
   2. Prototype semantic matching for instant system controls.
-  3. Cloud LLMs (Groq, Gemini, Claude) for complex reasoning.
+  3. Cloud LLMs (Groq, Gemini) for complex reasoning.
   4. Local Ollama LLM for offline privacy.
 * **Local RAG Vector Store**: 64-dimensional semantic text embeddings with cosine search for instant recall of facts, notes, and past tasks.
 * **Optional Encrypted PostgreSQL**: point `SPRYGEN_DATABASE_URL` at a Postgres instance and all app tables (tasks, chat, profile, memory) are mirrored **AES-256-GCM encrypted**. Without it, SPRYGEN transparently falls back to its local store.
@@ -187,7 +187,6 @@ Create a `.env` file in the root directory (see [`.env.example`](file:///.env.ex
 
 ```env
 # AI & LLM Endpoints
-ANTHROPIC_API_KEY=your_anthropic_api_key_here   # optional
 GEMINI_API_KEY=your_gemini_api_key_here         # optional
 GROQ_API_KEY=your_groq_api_key_here             # fast cloud LLM routing
 ELEVENLABS_API_KEY=your_elevenlabs_api_key       # voice TTS
