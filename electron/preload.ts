@@ -62,6 +62,13 @@ const api: JarvisAPI = {
     close: () => ipcRenderer.invoke("window:close"),
     isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
   },
+  automation: {
+    getStatus: () => ipcRenderer.invoke("automation:status"),
+    abort: () => ipcRenderer.invoke("automation:abort"),
+    webScrape: (input) => ipcRenderer.invoke("automation:web-scrape", input),
+    browserTask: (input) => ipcRenderer.invoke("automation:browser-task", input),
+    desktopAction: (input) => ipcRenderer.invoke("automation:desktop-action", input),
+  },
 };
 
 contextBridge.exposeInMainWorld("jarvis", api);

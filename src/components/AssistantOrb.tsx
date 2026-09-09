@@ -21,8 +21,8 @@ export function AssistantOrb({
       style={{ width: size, height: size }}
       onClick={onActivate}
       role="button"
-      aria-label="JARVIS assistant dial"
-      title="JARVIS"
+      aria-label="SPRYGEN assistant dial"
+      title="SPRYGEN"
     >
       <svg className="console-orb__ring" viewBox="0 0 100 100" aria-hidden="true">
         {ticks.map((i) => (

@@ -15,7 +15,7 @@ export function PairingSetup() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Pair with JARVIS Desktop</Text>
+      <Text style={styles.title}>Pair with SPRYGEN Desktop</Text>
       <Text style={styles.subtitle}>Connect over your local Wi-Fi network</Text>
 
       {paired ? (
@@ -45,7 +45,7 @@ export function PairingSetup() {
           {error && <Text style={styles.errorText}>{error}</Text>}
 
           <Button
-            title={loading ? "Pairing..." : "Connect to JARVIS"}
+            title={loading ? "Pairing..." : "Connect to SPRYGEN"}
             onPress={handlePair}
             disabled={loading || pin.length < 6}
           />

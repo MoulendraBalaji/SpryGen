@@ -73,7 +73,7 @@ export class DeviceSyncService extends EventEmitter {
               this.isPaired = true;
               this.emit("paired");
               res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: true, message: "Paired successfully with JARVIS." }));
+              res.end(JSON.stringify({ success: true, message: "Paired successfully with SPRYGEN." }));
             } else {
               res.writeHead(401, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ success: false, message: "Invalid pairing code." }));

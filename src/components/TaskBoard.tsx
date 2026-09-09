@@ -63,7 +63,7 @@ function QuickAsk({ onAsk }: { onAsk: (q: string) => void }) {
   const [q, setQ] = useState("");
   return (
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-      <ClayInput placeholder="Or just ask JARVIS…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (onAsk(q), setQ(""))} />
+      <ClayInput placeholder="Or just ask SPRYGEN…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (onAsk(q), setQ(""))} />
       <ClayButton variant="ghost" onClick={() => (onAsk(q), setQ(""))}>Ask</ClayButton>
     </div>
   );

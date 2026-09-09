@@ -58,7 +58,7 @@ export function ProfileSettings() {
       currentSample: 0,
       totalSamples: 8,
       status: "capturing",
-      message: "Starting voice enrollment. Speak 'Hey JARVIS' clearly..."
+      message: "Starting voice enrollment. Speak 'Hey SPRYGEN' clearly..."
     });
     try {
       await jarvis.voice.enroll();
@@ -86,7 +86,7 @@ export function ProfileSettings() {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <ClayCard large eyebrow="09 · Profile & Preferences">
         <p className="console-meta" style={{ margin: "0 0 14px" }}>
-          Everything JARVIS has learned — fully editable and transparent.
+          Everything SPRYGEN has learned — fully editable and transparent.
         </p>
 
         <label className="console-meta" style={{ display: "block", marginBottom: 6 }}>
@@ -169,7 +169,7 @@ export function ProfileSettings() {
           <ClayButton variant="primary" onClick={handleEnrollVoice} disabled={enrolling}>
             {enrolling ? "Capturing Voice…" : voiceStatus?.enrolled ? "Re-enroll Voiceprint" : "Enroll Voiceprint"}
           </ClayButton>
-          <ClayButton variant="ghost" onClick={() => jarvis.voice.speak("JARVIS voice synthesizer online and ready.")}>
+          <ClayButton variant="ghost" onClick={() => jarvis.voice.speak("SPRYGEN voice synthesizer online and ready.")}>
             Test Speech (TTS)
           </ClayButton>
         </div>
@@ -189,7 +189,7 @@ export function ProfileSettings() {
           />
         </div>
         <p className="console-meta" style={{ margin: "8px 0 0" }}>
-          Loop on → JARVIS listens continuously for its wake word. Loop off → listening is
+          Loop on → SPRYGEN listens continuously for its wake word. Loop off → listening is
           fully manual.
         </p>
       </ClayCard>

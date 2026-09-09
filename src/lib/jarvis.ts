@@ -33,7 +33,7 @@ const defaultIntent: IntentResult = {
   intent: "chat",
   params: {},
   routedTo: "local",
-  answer: "JARVIS is initializing…"
+  answer: "SPRYGEN is initializing…"
 };
 
 const fallbackAPI: JarvisAPI = {
@@ -96,6 +96,13 @@ const fallbackAPI: JarvisAPI = {
     maximize: async () => {},
     close: async () => {},
     isMaximized: async () => false
+  },
+  automation: {
+    getStatus: async () => ({ active: false, workflow: null, startedAt: null }),
+    abort: async () => ({ ok: false }),
+    webScrape: async () => ({ ok: false, data: null, logs: [], error: null }),
+    browserTask: async () => ({ ok: false, data: null, logs: [], error: null }),
+    desktopAction: async () => ({ ok: false, data: null, logs: [], error: null })
   },
   onEvent: (_channel, _cb) => {
     return () => {};

@@ -114,6 +114,50 @@ export interface DeviceSyncStatus {
   connectedDevices: number;
 }
 
+// ---------------------------------------------------------------------------
+// Automation (Selenium / BeautifulSoup / PyAutoGUI)
+// ---------------------------------------------------------------------------
+export interface AutomationResult {
+  ok: boolean;
+  data: any;
+  logs: string[];
+  error: {
+    code: string;
+    message: string;
+    detail?: string;
+  } | null;
+}
+
+export interface AutomationStatus {
+  active: boolean;
+  workflow: string | null;
+  startedAt: number | null;
+}
+
+export interface WebScrapeInput {
+  url: string;
+  selector?: string;
+  headless?: boolean;
+}
+
+export interface BrowserTaskStep {
+  action: "goto" | "click" | "type" | "extract" | "screenshot";
+  url?: string;
+  selector?: string;
+  by?: string;
+  text?: string;
+}
+
+export interface BrowserTaskInput {
+  steps: BrowserTaskStep[];
+  headless?: boolean;
+}
+
+export interface DesktopActionInput {
+  command: string;
+  params?: Record<string, unknown>;
+}
+
 export interface JarvisAPI {
   tasks: {
     list(): Promise<Task[]>;
@@ -169,6 +213,13 @@ export interface JarvisAPI {
     maximize(): Promise<void>;
     close(): Promise<void>;
     isMaximized(): Promise<boolean>;
+  };
+  automation: {
+    getStatus(): Promise<AutomationStatus>;
+    abort(): Promise<{ ok: boolean }>;
+    webScrape(input: WebScrapeInput): Promise<AutomationResult>;
+    browserTask(input: BrowserTaskInput): Promise<AutomationResult>;
+    desktopAction(input: DesktopActionInput): Promise<AutomationResult>;
   };
   onEvent(channel: string, cb: (...args: any[]) => void): () => void;
 }

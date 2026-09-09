@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from .config import SERVER_HOST, SERVER_PORT
 from .db import db
 from .agents.orchestrator import Orchestrator
+from .services.automation import automation
 
 
 orchestrator = Orchestrator()
@@ -37,14 +38,30 @@ class ProfileUpdateRequest(BaseModel):
     activeHours: dict[str, int] | None = None
 
 
+class ScrapeRequest(BaseModel):
+    url: str
+    selector: str | None = None
+    headless: bool = True
+
+
+class BrowserTaskRequest(BaseModel):
+    steps: list[dict[str, Any]]
+    headless: bool = True
+
+
+class DesktopActionRequest(BaseModel):
+    command: str
+    params: dict[str, Any] = {}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"[JARVIS Python Backend] Starting on {SERVER_HOST}:{SERVER_PORT}")
+    print(f"[SPRYGEN Python Backend] Starting on {SERVER_HOST}:{SERVER_PORT}")
     yield
-    print("[JARVIS Python Backend] Shutting down")
+    print("[SPRYGEN Python Backend] Shutting down")
 
 
-app = FastAPI(title="JARVIS Multi-Agent Backend", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="SPRYGEN Multi-Agent Backend", version="3.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -182,6 +199,38 @@ async def recall(body: dict):
     return resp.payload
 
 
+# ---------------------------------------------------------------------------
+# Automation API — Selenium / BeautifulSoup / PyAutoGUI workflows
+# ---------------------------------------------------------------------------
+@app.get("/api/automation/status")
+async def automation_status():
+    return automation.status()
+
+
+@app.post("/api/automation/abort")
+async def automation_abort():
+    automation.request_abort()
+    return {"ok": True}
+
+
+@app.post("/api/automation/web-scrape")
+async def automation_scrape(req: ScrapeRequest):
+    result = automation.web_scrape(req.url, req.selector, req.headless)
+    return _serialize_auth_result(result)
+
+
+@app.post("/api/automation/browser-task")
+async def automation_browser_task(req: BrowserTaskRequest):
+    result = automation.browser_task(req.steps, req.headless)
+    return _serialize_auth_result(result)
+
+
+@app.post("/api/automation/desktop-action")
+async def automation_desktop_action(req: DesktopActionRequest):
+    result = automation.desktop_action(req.command, req.params)
+    return _serialize_auth_result(result)
+
+
 @app.get("/api/integrations")
 async def integrations():
     adapters = [
@@ -225,6 +274,24 @@ async def _broadcast(channel: str, data: dict) -> None:
             dead.append(ws)
     for ws in dead:
         ws_clients.remove(ws)
+
+
+def _serialize_auth_result(result: Any) -> dict:
+    """Flatten AutomationResult for JSON transport."""
+    if hasattr(result, "ok"):
+        return {
+            "ok": result.ok,
+            "data": result.data,
+            "logs": getattr(result, "logs", []),
+            "error": {
+                "code": result.error.code,
+                "message": result.error.message,
+                "detail": getattr(result.error, "detail", ""),
+            }
+            if result.error
+            else None,
+        }
+    return {"ok": False, "data": None, "logs": [], "error": None}
 
 
 def _now_ms() -> int:

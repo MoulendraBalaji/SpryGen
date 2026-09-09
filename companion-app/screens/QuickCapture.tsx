@@ -24,7 +24,7 @@ export function QuickCapture() {
         placeholder="Note a task…"
         style={{ borderWidth: 1, borderColor: "#ccc", padding: 12, borderRadius: 12 }}
       />
-      <Button title="Send to JARVIS" onPress={() => setDraft("")} />
+      <Button title="Send to SPRYGEN" onPress={() => setDraft("")} />
     </View>
   );
 }

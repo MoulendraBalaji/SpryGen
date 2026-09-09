@@ -8,7 +8,7 @@ let sqlite: any = null;
 let db: any = null;
 let usingNative = false;
 
-const JSON_PATH = path.join(app.getPath("userData"), "jarvis.json");
+const JSON_PATH = path.join(app.getPath("userData"), "sprygen.json");
 const jsonStore: Record<string, any[]> = { tasks: [], assignments: [], chat: [], profile: [], memory: [] };
 
 function loadJson() {
@@ -28,7 +28,7 @@ function persistJson() {
 export async function initDb(): Promise<void> {
   try {
     sqlite = await import("better-sqlite3");
-    const dbPath = path.join(app.getPath("userData"), "jarvis.db");
+    const dbPath = path.join(app.getPath("userData"), "sprygen.db");
     db = new (sqlite.default ?? sqlite)(dbPath);
     db.pragma("journal_mode = WAL");
     usingNative = true;

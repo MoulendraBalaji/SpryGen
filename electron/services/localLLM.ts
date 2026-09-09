@@ -3,7 +3,7 @@ export interface LocalCompletion {
   ok: boolean;
 }
 
-const OLLAMA_URL = process.env.JARVIS_OLLAMA_URL || "http://127.0.0.1:11434";
+const OLLAMA_URL = process.env.SPRYGEN_OLLAMA_URL || process.env.JARVIS_OLLAMA_URL || "http://127.0.0.1:11434";
 
 export async function ollamaChat(prompt: string, model = "llama3.2"): Promise<LocalCompletion> {
   try {

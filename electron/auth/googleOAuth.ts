@@ -174,7 +174,7 @@ export class GoogleOAuthService {
             this.saveTokens(tokens);
 
             res.writeHead(200, { "Content-Type": "text/html" });
-            res.end("<h2>JARVIS: Google Classroom connected successfully!</h2><p>You may now return to the app.</p>");
+            res.end("<h2>SPRYGEN: Google Classroom connected successfully!</h2><p>You may now return to the app.</p>");
             server.close();
             resolve(tokens.accessToken);
           }

@@ -37,7 +37,7 @@ export function ChatPanel() {
         <div ref={endRef} />
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-        <ClayInput placeholder="Ask JARVIS anything…  or /screen to analyze the display" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
+        <ClayInput placeholder="Ask SPRYGEN anything…  or /screen to analyze the display" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
         <ClayButton variant="primary" onClick={submit}>Send</ClayButton>
       </div>
     </ClayCard>

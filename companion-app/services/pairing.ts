@@ -30,7 +30,7 @@ export function usePairing() {
         return false;
       }
     } catch (err) {
-      setError(`Connection failed: Check IP & ensure JARVIS desktop is running.`);
+      setError(`Connection failed: Check IP & ensure SPRYGEN desktop is running.`);
       setLoading(false);
       return false;
     }

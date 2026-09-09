@@ -85,7 +85,7 @@ class ChatAgent(BaseAgent):
         facts = profile.get("learnedFacts", [])
         fact_lines = [f"- {f['key']}: {f['value']}" for f in facts[:20]] if facts else []
         parts = [
-            "You are JARVIS, a helpful AI desktop assistant.",
+            "You are SPRYGEN, a helpful AI desktop assistant.",
             f"Respond in a {style} style.",
         ]
         if fact_lines:
@@ -96,7 +96,7 @@ class ChatAgent(BaseAgent):
     def _local_fallback(text: str) -> str:
         lower = text.lower()
         if "hello" in lower or "hi" in lower or "hey" in lower:
-            return "Hello! I'm JARVIS. How can I help you today?"
+            return "Hello! I'm SPRYGEN. How can I help you today?"
         if "time" in lower:
             return f"The current time is {time.strftime('%I:%M %p')}."
         if "date" in lower:

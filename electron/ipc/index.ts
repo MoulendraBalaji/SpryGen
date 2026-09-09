@@ -60,13 +60,13 @@ export function registerIpc() {
   });
 
   // Environment & config health row — intended as an in-app notice for unset keys.
-  const ENV_CHECKS = [
+  const ENV_CHECKS: { key: string; alt?: string; label: string }[] = [
     { key: "ANTHROPIC_API_KEY", label: "Anthropic" },
     { key: "GEMINI_API_KEY", label: "Gemini" },
-    { key: "JARVIS_OLLAMA_URL", label: "Ollama" },
+    { key: "SPRYGEN_OLLAMA_URL", alt: "JARVIS_OLLAMA_URL", label: "Ollama" },
     { key: "PICOVOICE_ACCESS_KEY", label: "Picovoice" }
   ];
-  const missingEnv = ENV_CHECKS.filter((c) => !process.env[c.key]);
+  const missingEnv = ENV_CHECKS.filter((c) => !process.env[c.key] && !(c.alt && process.env[c.alt]));
   healthMonitor.register({
     id: "env",
     label: "AI Keys & Voice",
@@ -81,13 +81,15 @@ export function registerIpc() {
   // Stream health-monitor changes (backend probes, adapter reconnects) to the renderer.
   healthMonitor.subscribe(() => pushEvent("integrations:update"));
 
-  // Voice event listeners
+  // Voice event listeners — async push pipes into the renderer voiceStore.
   voice.on("state-change", (state) => pushEvent("voice:state-change", state));
   voice.on("enroll-progress", (p) => pushEvent("voice:enroll-progress", p));
   voice.on("audio-level", (level) => pushEvent("voice:audio-level", level));
   voice.on("wake", () => pushEvent("voice:wake"));
   voice.on("transcript", (text) => pushEvent("voice:transcript", text));
   voice.on("unauthorized-voice", (score) => pushEvent("voice:unauthorized-voice", score));
+  // Typed engine errors (PERMISSION_DENIED / DEVICE_NOT_FOUND / RECORDER_TIMEOUT / ENGINE_FAILURE)
+  voice.on("voice-error", (err) => pushEvent("voice:error", err));
 
   // Overlay event listeners
   overlay.on("mode-change", (mode) => pushEvent("overlay:mode-change", mode));
@@ -225,10 +227,16 @@ export function registerIpc() {
     ];
   });
 
-  // Voice Engine IPC
+  // Voice Engine IPC — non-blocking, main-process persistent singleton.
   ipcMain.handle("voice:enroll", () => voice.enroll());
-  ipcMain.handle("voice:start", () => voice.start());
-  ipcMain.handle("voice:stop", () => voice.stop());
+  ipcMain.handle("voice:start", async () => {
+    const res = await voice.start();
+    return res.ok;
+  });
+  ipcMain.handle("voice:stop", async () => {
+    const res = await voice.stop();
+    return res.ok;
+  });
   ipcMain.handle("voice:getStatus", () => voice.getStatus());
   ipcMain.handle("voice:speak", (_e, text: string) => voice.speak(text));
 
@@ -251,6 +259,37 @@ export function registerIpc() {
     const hits = await vectorStore.query(text, 3);
     if (!hits.length) return "I don't have anything stored about that yet.";
     return hits.map((h) => `• ${h.text}`).join("\n");
+  });
+
+  // Automation IPC — Selenium / BeautifulSoup / PyAutoGUI (proxied to Python backend)
+  ipcMain.handle("automation:status", async () => {
+    const res = await proxyToPython("/api/automation/status");
+    return res ?? { active: false, workflow: null, startedAt: null };
+  });
+  ipcMain.handle("automation:abort", async () => {
+    const res = await proxyToPython("/api/automation/abort", { method: "POST" });
+    return res ?? { ok: false };
+  });
+  ipcMain.handle("automation:web-scrape", async (_e, input) => {
+    const res = await proxyToPython("/api/automation/web-scrape", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
+  });
+  ipcMain.handle("automation:browser-task", async (_e, input) => {
+    const res = await proxyToPython("/api/automation/browser-task", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
+  });
+  ipcMain.handle("automation:desktop-action", async (_e, input) => {
+    const res = await proxyToPython("/api/automation/desktop-action", {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
   });
 
   return {

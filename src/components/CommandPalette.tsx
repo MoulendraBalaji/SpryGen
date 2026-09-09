@@ -105,7 +105,7 @@ export function CommandPalette() {
       },
       {
         id: "chat",
-        label: q ? `Ask JARVIS: ${q}` : "Ask JARVIS anything…",
+        label: q ? `Ask SPRYGEN: ${q}` : "Ask SPRYGEN anything…",
         hint: "send to chat",
         run: () => {
           if (q) void useChat.getState().send(q);

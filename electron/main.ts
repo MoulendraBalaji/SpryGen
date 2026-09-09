@@ -248,11 +248,11 @@ function createTray(): void {
     );
 
     tray = new Tray(icon);
-    tray.setToolTip("JARVIS \u2014 Voice-locked AI Assistant");
+    tray.setToolTip("SPRYGEN \u2014 Voice-locked AI Assistant");
 
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: "Summon JARVIS",
+        label: "Summon SPRYGEN",
         accelerator: "CmdOrCtrl+Shift+Space",
         click: () => overlay.summon()
       },
@@ -274,13 +274,13 @@ function createTray(): void {
         type: "checkbox",
         checked: true,
         click: (item) => {
-          if (item.checked) voice.start();
-          else voice.stop();
+          if (item.checked) void voice.start();
+          else void voice.stop();
         }
       },
       { type: "separator" },
       {
-        label: "Quit JARVIS",
+        label: "Quit SPRYGEN",
         click: () => {
           app.quit();
         }

@@ -1,6 +1,6 @@
-appId: com.jarvis.assistant
-productName: JARVIS
-copyright: Copyright © 2026 Jarvis Team
+appId: com.sprygen.desktop
+productName: Sprygen
+copyright: Copyright © 2026 Sprygen Team
 directories:
   output: release
 files:
@@ -21,16 +21,28 @@ extraResources:
       - "!**/__pycache__/**"
       - "!**/*.pyc"
 mac:
-  target: [dmg, zip]
+  target:
+    - target: dmg
+      arch: [x64, arm64]
   category: public.app-category.productivity
+  artifactName: Sprygen-${version}-${os}-${arch}.${ext}
 win:
-  target: [nsis, portable, zip]
-  artifactName: JARVIS-${version}-${os}-${arch}.${ext}
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Sprygen-${version}-${os}-${arch}.${ext}
+  icon: build/icon.ico
 linux:
-  target: [tar.gz, deb, AppImage, zip]
+  target:
+    - target: deb
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
   category: Utility
-  maintainer: Jarvis Team
-  artifactName: JARVIS-${version}-${os}-${arch}.${ext}
+  maintainer: Sprygen Team
+  artifactName: Sprygen-${version}-${os}-${arch}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico

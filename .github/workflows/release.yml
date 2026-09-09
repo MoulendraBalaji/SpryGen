@@ -1,4 +1,4 @@
-name: Build & Release JARVIS
+name: Build & Release SPRYGEN
 
 on:
   push:
@@ -66,13 +66,13 @@ jobs:
       - name: Rename Windows installer
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: Get-ChildItem release -Filter *.exe | Where-Object { $_.Name -match 'portable' } | ForEach-Object { Rename-Item $_.FullName 'JARVIS-Windows-installer.exe' }
+        run: Get-ChildItem release -Filter *.exe | Where-Object { $_.Name -match 'nsis' } | ForEach-Object { Rename-Item $_.FullName 'SPRYGEN-Windows-installer.exe' }
 
       - name: Collect installer artifacts
         shell: bash
         run: |
           mkdir -p artifacts
-          cp -f release/JARVIS-* artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-* artifacts/ 2>/dev/null || true
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
