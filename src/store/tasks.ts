@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { Task } from "../../shared/types";
 
 interface TasksState {
@@ -15,21 +15,21 @@ export const useTasks = create<TasksState>((set, get) => ({
   tasks: [],
   loaded: false,
   load: async () => {
-    const tasks = (await jarvis.tasks.list()) as Task[];
+    const tasks = (await sprygen.tasks.list()) as Task[];
     set({ tasks, loaded: true });
   },
   create: async (title, dueAt = null) => {
-    await jarvis.tasks.create({ title, dueAt, source: "manual", completed: false });
+    await sprygen.tasks.create({ title, dueAt, source: "manual", completed: false });
     await get().load();
   },
   toggle: async (id) => {
     const t = get().tasks.find((x) => x.id === id);
     if (!t) return;
-    await jarvis.tasks.update(id, { completed: !t.completed });
+    await sprygen.tasks.update(id, { completed: !t.completed });
     await get().load();
   },
   remove: async (id) => {
-    await jarvis.tasks.remove(id);
+    await sprygen.tasks.remove(id);
     await get().load();
   }
 }));

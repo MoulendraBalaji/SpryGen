@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ClayCard } from "../design-system";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { Assignment } from "../../shared/types";
 
 export function AssignmentFeed() {
@@ -8,7 +8,7 @@ export function AssignmentFeed() {
 
   useEffect(() => {
     const load = async () => {
-      const raw = (await jarvis.briefing.generate()) as any[];
+      const raw = (await sprygen.briefing.generate()) as any[];
       setItems(
         raw
           .filter((r) => r.kind === "assignment")

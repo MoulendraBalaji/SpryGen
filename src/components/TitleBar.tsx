@@ -7,21 +7,21 @@ export function TitleBar() {
   const [maximized, setMaximized] = React.useState(false);
 
   React.useEffect(() => {
-    window.jarvis?.window?.isMaximized().then(setMaximized);
-    const unsub = window.jarvis?.onEvent("window:maximized-change", (isMax: boolean) => {
+    window.sprygen?.window?.isMaximized().then(setMaximized);
+    const unsub = window.sprygen?.onEvent("window:maximized-change", (isMax: boolean) => {
       setMaximized(isMax);
     });
     return () => { unsub?.(); };
   }, []);
 
-  const handleMinimize = () => window.jarvis?.window?.minimize();
-  const handleMaximize = () => window.jarvis?.window?.maximize();
-  const handleClose = () => window.jarvis?.window?.close();
+  const handleMinimize = () => window.sprygen?.window?.minimize();
+  const handleMaximize = () => window.sprygen?.window?.maximize();
+  const handleClose = () => window.sprygen?.window?.close();
 
   return (
     <div className="titlebar" onDoubleClick={handleMaximize}>
       <div className="titlebar__drag">
-        <span className="titlebar__title">JARVIS</span>
+        <span className="titlebar__title">sprygen</span>
       </div>
       <div className="titlebar__actions">
         <button

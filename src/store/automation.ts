@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import {
   AutomationResult,
   AutomationStatus,
@@ -27,19 +27,19 @@ export const useAutomation = create<AutomationState>((set, get) => ({
   error: null,
 
   refresh: async () => {
-    const status = (await jarvis.automation.getStatus()) as AutomationStatus;
+    const status = (await sprygen.automation.getStatus()) as AutomationStatus;
     set({ status });
   },
 
   abort: async () => {
-    await jarvis.automation.abort();
+    await sprygen.automation.abort();
     await get().refresh();
   },
 
   webScrape: async (input) => {
     set({ running: true, error: null });
     try {
-      const result = (await jarvis.automation.webScrape(input)) as AutomationResult;
+      const result = (await sprygen.automation.webScrape(input)) as AutomationResult;
       set({ result, running: false });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err), running: false });
@@ -50,7 +50,7 @@ export const useAutomation = create<AutomationState>((set, get) => ({
   browserTask: async (input) => {
     set({ running: true, error: null });
     try {
-      const result = (await jarvis.automation.browserTask(input)) as AutomationResult;
+      const result = (await sprygen.automation.browserTask(input)) as AutomationResult;
       set({ result, running: false });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err), running: false });
@@ -61,7 +61,7 @@ export const useAutomation = create<AutomationState>((set, get) => ({
   desktopAction: async (input) => {
     set({ running: true, error: null });
     try {
-      const result = (await jarvis.automation.desktopAction(input)) as AutomationResult;
+      const result = (await sprygen.automation.desktopAction(input)) as AutomationResult;
       set({ result, running: false });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err), running: false });

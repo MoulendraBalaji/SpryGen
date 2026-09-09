@@ -10,7 +10,7 @@ interface ThemeState {
 
 function getInitialTheme(): Theme {
   if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("jarvis-theme") as Theme | null;
+    const stored = localStorage.getItem("sprygen-theme") as Theme | null;
     if (stored === "dark" || stored === "light") return stored;
   }
   return "light";
@@ -18,7 +18,7 @@ function getInitialTheme(): Theme {
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("jarvis-theme", theme);
+  localStorage.setItem("sprygen-theme", theme);
 }
 
 const initial = getInitialTheme();

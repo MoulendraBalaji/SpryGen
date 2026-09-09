@@ -25,41 +25,48 @@ export function ClayCard({
   );
 }
 
-export function ClayButton({
-  variant = "default",
-  children,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "default" | "primary" | "accent" | "ghost";
-}) {
-  const cls = ["console-btn", variant !== "default" ? `console-btn--${variant}` : ""].filter(Boolean).join(" ");
-  return (
-    <button className={cls} {...rest}>
-      {children}
-    </button>
-  );
-}
+};
 
-export function ClayInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className="console-input" {...props} />;
-}
+export const ClayButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  function ClayButton({ variant = "default", children, ...rest }, ref) {
+    const cls = ["console-btn", variant !== "default" ? `console-btn--${variant}` : ""].filter(Boolean).join(" ");
+    return (
+      <button ref={ref} className={cls} {...rest}>
+        {children}
+      </button>
+    );
+  }
+);
 
-export function ClayToggle({
-  on,
-  onChange,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      className={`console-toggle ${on ? "console-toggle--on" : ""}`}
-      onClick={onChange}
-      aria-pressed={on}
-      {...rest}
-    >
-      <span className="console-toggle__knob" />
-    </button>
-  );
-}
+export const ClayInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  function ClayInput(props, ref) {
+    return <input ref={ref} className="console-input" {...props} />;
+  }
+);
+
+type ToggleProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange"> & {
+  on: boolean;
+  onChange: () => void;
+};
+
+export const ClayToggle = React.forwardRef<HTMLButtonElement, ToggleProps>(
+  function ClayToggle({ on, onChange, ...rest }, ref) {
+    return (
+      <button
+        ref={ref}
+        className={`console-toggle ${on ? "console-toggle--on" : ""}`}
+        onClick={onChange}
+        type="button"
+        aria-pressed={on}
+        {...rest}
+      >
+        <span className="console-toggle__knob" />
+      </button>
+    );
+  }
+);
 
 export function ClayBadge({
   status,
@@ -87,10 +94,39 @@ export function ClayModal({
   title?: string;
   children: React.ReactNode;
 }) {
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const restoreFocus = document.activeElement as HTMLElement | null;
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+      if (restoreFocus && typeof restoreFocus.focus === "function") restoreFocus.focus();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
+
   return (
-    <div className="console-modal__backdrop" onClick={onClose}>
-      <div className="console-modal__panel" onClick={(e) => e.stopPropagation()}>
+    <div className="console-modal__backdrop" onClick={onClose} role="presentation">
+      <div
+        ref={panelRef}
+        className="console-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
         {title && <h3 style={{ margin: "0 0 16px", color: "var(--console-text)" }}>{title}</h3>}
         {children}
       </div>

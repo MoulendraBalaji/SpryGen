@@ -1,6 +1,6 @@
 import { dbLayer } from "./db";
 import { ollamaChat, ollamaAvailable } from "./localLLM";
-import { claudeChat } from "./cloudLLM";
+import { groqChat, geminiChat, claudeChat } from "./cloudLLM";
 import { vectorStore } from "./vectorStore";
 import { profileService } from "./profileService";
 import { IntentResult, UserProfile } from "../../shared/types";
@@ -36,16 +36,6 @@ const INTENT_ANCHORS: IntentAnchor[] = [
       "list my open tasks",
       "what do I have to do today",
       "show pending items"
-    ]
-  },
-  {
-    intent: "classroom.query",
-    prototypes: [
-      "what homework do I have",
-      "check google classroom assignments",
-      "any upcoming coursework deadlines",
-      "show classroom announcements",
-      "what assignments are due this week"
     ]
   },
   {
@@ -144,10 +134,6 @@ export class SmartRouter {
       return { intent: "task.list", confidence: 0.9, params: {} };
     }
 
-    if (/\b(classroom|assignment|coursework|homework)\b/i.test(t)) {
-      return { intent: "classroom.query", confidence: 0.88, params: {} };
-    }
-
     if (/\b(whatsapp|phone notification|text message)\b/i.test(t)) {
       return { intent: "whatsapp.query", confidence: 0.85, params: {} };
     }
@@ -216,16 +202,6 @@ export class SmartRouter {
       case "memory.store": {
         return `Saved to memory: "${params.fact}". You can recall this anytime.`;
       }
-      case "classroom.query": {
-        const assignments = (dbLayer.all("assignments") as any[]) || [];
-        if (!assignments.length) {
-          return "No classroom assignments currently synced. Click Authorize on Google Classroom in Integrations to sync live coursework.";
-        }
-        return (
-          `Here is your latest Classroom coursework:\n` +
-          assignments.slice(0, 5).map((a) => `• [${a.course}] ${a.title}${a.dueAt ? ` — due ${new Date(Number(a.dueAt)).toLocaleDateString()}` : ""}`).join("\n")
-        );
-      }
       case "whatsapp.query": {
         return "WhatsApp capture is active. Candidate assignments and deadline announcements from your groups are automatically ingested into your Task Board.";
       }
@@ -245,7 +221,7 @@ export class SmartRouter {
         return "Here is what I found in your memory graph:\n" + hits.map((h) => `• ${h.text}`).join("\n");
       }
       default:
-        return "I am JARVIS, your personal assistant. I can manage tasks, sync Classroom coursework, monitor WhatsApp deadlines, open apps, and recall your notes.";
+        return "I am SPRYGEN, your local-first AI desktop assistant. I can manage tasks, run browser and desktop automation, scrape web pages, monitor WhatsApp deadlines, recall your notes, and search the web.";
     }
   }
 
@@ -273,23 +249,31 @@ export class SmartRouter {
 
     const isComplex = intent === "general.qa" || intent === "screen.describe" || input.text.length > 70;
 
-    // Check Cloud LLM first if configured
-    if (process.env.ANTHROPIC_API_KEY) {
-      const res = await claudeChat(
-        `You are JARVIS, a personal AI desktop assistant. ${profileContext} Keep responses helpful, concise and direct.`,
-        [...input.history, { role: "user", content: input.text }]
-      );
-      if (res.ok) {
-        return { intent, params, routedTo: "cloud", answer: res.text, confidence };
-      }
-    }
+    if (isComplex) {
+      const llmSystem = `You are SPRYGEN, a local-first AI desktop assistant. ${profileContext} Keep responses helpful, concise and direct.`;
+      const llmMessages = [...input.history, { role: "user" as const, content: input.text }];
 
-    // Check Local Ollama LLM
-    const localAvailable = await ollamaAvailable();
-    if (localAvailable && isComplex) {
-      const res = await ollamaChat(`${profileContext}\nUser: ${input.text}`);
-      if (res.ok) {
-        return { intent, params, routedTo: "local", answer: res.text, confidence };
+      // Cloud LLMs first — fast, capable providers in priority order.
+      const providers = [
+        { key: `${process.env.GROQ_API_KEY ?? ""}`.length ? "groq" : "", fn: () => groqChat(llmSystem, llmMessages) },
+        { key: `${process.env.GEMINI_API_KEY ?? ""}`.length ? "gemini" : "", fn: () => geminiChat(llmSystem, llmMessages) },
+        { key: `${process.env.ANTHROPIC_API_KEY ?? ""}`.length ? "claude" : "", fn: () => claudeChat(llmSystem, llmMessages) }
+      ];
+      for (const p of providers) {
+        if (!p.key) continue;
+        const res = await p.fn();
+        if (res.ok && res.text.trim()) {
+          return { intent, params, routedTo: "cloud", answer: res.text, confidence };
+        }
+      }
+
+      // Local Ollama fallback
+      const localAvailable = await ollamaAvailable();
+      if (localAvailable) {
+        const res = await ollamaChat(`${profileContext}\nUser: ${input.text}`);
+        if (res.ok) {
+          return { intent, params, routedTo: "local", answer: res.text, confidence };
+        }
       }
     }
 

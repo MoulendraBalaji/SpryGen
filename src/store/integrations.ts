@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { AdapterState } from "../../shared/types";
 
 interface IntegrationsState {
@@ -12,23 +12,23 @@ interface IntegrationsState {
 export const useIntegrations = create<IntegrationsState>((set) => ({
   adapters: [],
   load: async () => {
-    const adapters = await jarvis.integrations.list();
+    const adapters = await sprygen.integrations.list();
     set({ adapters });
   },
   reconnect: async (id) => {
-    await jarvis.integrations.reconnect(id);
-    const adapters = await jarvis.integrations.list();
+    await sprygen.integrations.reconnect(id);
+    const adapters = await sprygen.integrations.list();
     set({ adapters });
   },
   authorize: async (id) => {
-    await jarvis.integrations.authorize(id);
-    const adapters = await jarvis.integrations.list();
+    await sprygen.integrations.authorize(id);
+    const adapters = await sprygen.integrations.list();
     set({ adapters });
   }
 }));
 
 if (typeof window !== "undefined") {
-  jarvis.onEvent("integrations:update", () => {
+  sprygen.onEvent("integrations:update", () => {
     useIntegrations.getState().load();
   });
 }

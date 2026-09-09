@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 
 interface RecallState {
   query: string;
@@ -25,7 +25,7 @@ export const useRecall = create<RecallState>((set, get) => ({
       return;
     }
     set({ query: q, searching: true, searched: true });
-    const result = (await jarvis.recall.query(q)) as string;
+    const result = (await sprygen.recall.query(q)) as string;
     set({ result, searching: false });
   }
 }));

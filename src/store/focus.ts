@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { OverlayStatus, SuppressedNotification } from "../../shared/types";
 
 interface FocusState {
@@ -23,8 +23,8 @@ export const useFocus = create<FocusState>((set, get) => ({
   isDND: false,
 
   load: async () => {
-    const status = (await jarvis.overlay.getStatus()) as OverlayStatus;
-    const queue = (await jarvis.overlay.getQueue()) as SuppressedNotification[];
+    const status = (await sprygen.overlay.getStatus()) as OverlayStatus;
+    const queue = (await sprygen.overlay.getQueue()) as SuppressedNotification[];
     set({
       on: status.mode === "suppressed",
       mode: status.mode,
@@ -36,12 +36,12 @@ export const useFocus = create<FocusState>((set, get) => ({
   },
 
   toggle: async (on) => {
-    await jarvis.overlay.setMode(on ? "suppressed" : "summoned");
+    await sprygen.overlay.setMode(on ? "suppressed" : "summoned");
     await get().load();
   },
 
   flush: async () => {
-    await jarvis.overlay.flushQueue();
+    await sprygen.overlay.flushQueue();
     set({ queue: [], suppressedCount: 0 });
     await get().load();
   }
@@ -50,7 +50,7 @@ export const useFocus = create<FocusState>((set, get) => ({
 if (typeof window !== "undefined") {
   ["overlay:mode-change", "overlay:notification-queued", "overlay:queue-flushed"].forEach(
     (channel) => {
-      jarvis.onEvent(channel, () => {
+      sprygen.onEvent(channel, () => {
         useFocus.getState().load();
       });
     }

@@ -6,7 +6,7 @@ export const screenContext = {
     // Offline: tesseract.js + local LLM. Online: Claude vision.
     if (process.env.ANTHROPIC_API_KEY) {
       const res = await claudeChat(
-        "You are JARVIS Second Sight. Describe what is on the user's screen in response to their question. Be concise.",
+        "You are SPRYGEN Second Sight. Describe what is on the user's screen in response to their question. Be concise.",
         [{ role: "user", content: prompt }]
       );
       if (res.ok) return res.text;

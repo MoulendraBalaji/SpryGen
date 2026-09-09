@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import { exec } from "node:child_process";
 import * as os from "node:os";
+import * as path from "node:path";
+import { writeFile, unlink } from "node:fs/promises";
 import electronLog from "electron-log";
 import { dbLayer } from "../db";
 import { profileService } from "../profileService";
@@ -363,11 +365,21 @@ class VoiceService extends EventEmitter {
 
   /**
    * Native Text-to-Speech execution.
+   * Primary provider: ElevenLabs (ELEVENLABS_API_KEY). Falls back to the OS
+   * synthesizer when the key is absent, the request fails, or playback breaks.
    */
   public async speak(text: string): Promise<boolean> {
     if (!text || !text.trim()) return false;
     this.setState("speaking");
     this.emit("speak-start", text);
+
+    const audioPath = await this._elevenLabsSpeak(text);
+    if (audioPath) {
+      const played = await this._playAudioFile(audioPath);
+      this.setState("idle");
+      this.emit("speak-end", text);
+      return played;
+    }
 
     return new Promise((resolve) => {
       const cleanText = text.replace(/["`$\\]/g, " ").slice(0, 300);
@@ -385,6 +397,63 @@ class VoiceService extends EventEmitter {
       exec(cmd, { timeout: 10000 }, () => {
         this.setState("idle");
         this.emit("speak-end", text);
+        resolve(true);
+      });
+    });
+  }
+
+  /**
+   * Synthesizes speech via the ElevenLabs TTS API and returns a temp audio path.
+   * Returns null (caller falls back to native TTS) when unconfigured or on error.
+   */
+  private async _elevenLabsSpeak(text: string): Promise<string | null> {
+    const apiKey = process.env.ELEVENLABS_API_KEY || process.env.XI_API_KEY;
+    if (!apiKey) return null;
+    const voiceId = process.env.ELEVENLABS_VOICE_ID || "pNInz6obpgDQGcFmaJgB"; // Rachel
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: text.slice(0, 2000),
+          model_id: "eleven_multilingual_v2",
+          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0 }
+        })
+      });
+      if (!res.ok) {
+        log.warn(`ElevenLabs TTS returned ${res.status} — falling back to native TTS`);
+        return null;
+      }
+      const audio = Buffer.from(await res.arrayBuffer());
+      const filePath = path.join(os.tmpdir(), `sprygen-tts-${Date.now()}.mp3`);
+      await writeFile(filePath, audio);
+      log.info(`ElevenLabs TTS rendered ${audio.length} bytes → ${filePath}`);
+      return filePath;
+    } catch (err) {
+      log.warn("ElevenLabs TTS failed — falling back to native TTS", err);
+      return null;
+    }
+  }
+
+  /**
+   * Best-effort cross-platform MP3 playback. Blocks until playback completes.
+   */
+  private _playAudioFile(filePath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const platform = os.platform();
+      let cmd = "";
+      if (platform === "win32") {
+        cmd = `powershell -Command "Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class Mci { [System.Runtime.InteropServices.DllImport(\"winmm.dll\")] public static extern int mciSendString(string c, string r, int l, int h); }'; [Mci]::mciSendString('open \\"${filePath}\\" type mpegvideo alias sytts', $null, 0, 0); [Mci]::mciSendString('play sytts wait', $null, 0, 0) | Out-Null; [Mci]::mciSendString('close sytts', $null, 0, 0)"`;
+      } else if (platform === "darwin") {
+        cmd = `afplay "${filePath}"`;
+      } else {
+        cmd = `mpg123 "${filePath}" 2>/dev/null || ffplay -nodisp -autoexit "${filePath}" 2>/dev/null || true`;
+      }
+      exec(cmd, { timeout: 20000 }, () => {
+        unlink(filePath).catch(() => undefined);
         resolve(true);
       });
     });

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { JarvisAPI } from "../shared/types";
+import { SprygenAPI } from "../shared/types";
 
-const api: JarvisAPI = {
+const api: SprygenAPI = {
   tasks: {
     list: () => ipcRenderer.invoke("tasks:list"),
     create: (input) => ipcRenderer.invoke("tasks:create", input),
@@ -71,4 +71,4 @@ const api: JarvisAPI = {
   },
 };
 
-contextBridge.exposeInMainWorld("jarvis", api);
+contextBridge.exposeInMainWorld("sprygen", api);

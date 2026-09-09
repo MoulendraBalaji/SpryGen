@@ -12,7 +12,9 @@ companion-app/node_modules/
 dist/
 dist-electron/
 release/
-build/
+build/*
+!build/icon.png
+!build/icon.ico
 .expo/
 *.tsbuildinfo
 

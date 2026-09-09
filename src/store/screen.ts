@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 
 interface ScreenState {
   prompt: string;
@@ -22,7 +22,7 @@ export const useScreen = create<ScreenState>((set, get) => ({
     const text = (prompt ?? get().prompt).trim() || "Summarize what is currently on screen.";
     set({ prompt: text, capturing: true, error: null });
     try {
-      const result = (await jarvis.screen.captureAndDescribe(text)) as string;
+      const result = (await sprygen.screen.captureAndDescribe(text)) as string;
       set({ result, capturing: false });
     } catch (err) {
       set({

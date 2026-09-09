@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { UserProfile } from "../../shared/types";
 
 interface ProfileState {
@@ -12,16 +12,16 @@ interface ProfileState {
 export const useProfile = create<ProfileState>((set, get) => ({
   profile: null,
   load: async () => {
-    const profile = (await jarvis.profile.get()) as UserProfile;
+    const profile = (await sprygen.profile.get()) as UserProfile;
     set({ profile });
   },
   set: async (patch) => {
-    const profile = (await jarvis.profile.set(patch)) as UserProfile;
+    const profile = (await sprygen.profile.set(patch)) as UserProfile;
     set({ profile });
   },
   deleteFact: async (key) => {
-    await jarvis.profile.deleteFact(key);
-    const profile = (await jarvis.profile.get()) as UserProfile;
+    await sprygen.profile.deleteFact(key);
+    const profile = (await sprygen.profile.get()) as UserProfile;
     set({ profile });
   }
 }));

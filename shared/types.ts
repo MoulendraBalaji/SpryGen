@@ -158,7 +158,7 @@ export interface DesktopActionInput {
   params?: Record<string, unknown>;
 }
 
-export interface JarvisAPI {
+export interface SprygenAPI {
   tasks: {
     list(): Promise<Task[]>;
     create(input: Partial<Task>): Promise<Task>;

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { VoiceStatus } from "../../shared/types";
 
 export interface VoiceRuntimeError {
@@ -25,18 +25,18 @@ export const useVoice = create<VoiceControlState>((set, get) => ({
   audioLevel: 0,
 
   load: async () => {
-    const status = (await jarvis.voice.getStatus()) as VoiceStatus;
+    const status = (await sprygen.voice.getStatus()) as VoiceStatus;
     set({ status, listening: Boolean(status.active) });
   },
 
   setListening: async (on) => {
     try {
       if (on) {
-        await jarvis.voice.startListening();
+        await sprygen.voice.startListening();
       } else {
-        await jarvis.voice.stopListening();
+        await sprygen.voice.stopListening();
       }
-      const status = (await jarvis.voice.getStatus()) as VoiceStatus;
+      const status = (await sprygen.voice.getStatus()) as VoiceStatus;
       set({ status, listening: Boolean(status.active) });
     } catch {
       /* error surfaced via voice:error push event */
@@ -47,13 +47,13 @@ export const useVoice = create<VoiceControlState>((set, get) => ({
 }));
 
 if (typeof window !== "undefined") {
-  jarvis.onEvent("voice:state-change", () => {
+  sprygen.onEvent("voice:state-change", () => {
     useVoice.getState().load();
   });
-  jarvis.onEvent("voice:audio-level", (level: number) => {
+  sprygen.onEvent("voice:audio-level", (level: number) => {
     useVoice.setState({ audioLevel: level });
   });
-  jarvis.onEvent("voice:error", (err: VoiceRuntimeError) => {
+  sprygen.onEvent("voice:error", (err: VoiceRuntimeError) => {
     useVoice.setState({ error: err });
   });
 }

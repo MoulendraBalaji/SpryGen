@@ -9,6 +9,7 @@ import { deviceSync } from "./services/deviceSync";
 import { overlay } from "./services/overlay";
 import { voice } from "./services/voice/voice";
 import { manualCaptureAdapter } from "./services/adapters/manualCaptureAdapter";
+import { pgStore } from "./services/postgres";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -319,6 +320,7 @@ app.whenReady().then(async () => {
   loadEnvFile();
   startPythonBackend();
   const { notify } = registerIpc();
+  await pgStore.init(); // best-effort: falls back to local store when unreachable
   mainWindow = createWindow();
   createTray();
   registerGlobalHotkeys();

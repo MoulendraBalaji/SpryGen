@@ -234,7 +234,6 @@ async def automation_desktop_action(req: DesktopActionRequest):
 @app.get("/api/integrations")
 async def integrations():
     adapters = [
-        {"id": "classroom", "label": "Google Classroom", "description": "Syncs coursework and deadlines", "status": "unauthenticated", "lastSyncAt": None},
         {"id": "whatsapp-web", "label": "WhatsApp Web", "description": "Parses deadline messages", "status": "dead", "lastSyncAt": None},
         {"id": "notif-mirror", "label": "Notification Mirror", "description": "Phone notification forwarding", "status": "dead", "lastSyncAt": None},
         {"id": "manual-capture", "label": "Quick Capture", "description": "Clipboard hotkey capture", "status": "healthy", "lastSyncAt": None},

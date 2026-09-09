@@ -8,8 +8,8 @@ export const TitleBar: React.FC<{ status?: EngineStatus }> = ({ status = 'idle' 
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
-    window.jarvis?.window?.isMaximized().then(setIsMaximized);
-    const unsub = window.jarvis?.onEvent('window:maximized-change', (isMax: boolean) => {
+    window.sprygen?.window?.isMaximized().then(setIsMaximized);
+    const unsub = window.sprygen?.onEvent('window:maximized-change', (isMax: boolean) => {
       setIsMaximized(isMax);
     });
     return () => {
@@ -17,12 +17,12 @@ export const TitleBar: React.FC<{ status?: EngineStatus }> = ({ status = 'idle' 
     };
   }, []);
 
-  const handleMinimize = () => window.jarvis?.window?.minimize();
+  const handleMinimize = () => window.sprygen?.window?.minimize();
   const handleMaximize = () => {
-    window.jarvis?.window?.maximize();
+    window.sprygen?.window?.maximize();
     setIsMaximized(!isMaximized);
   };
-  const handleClose = () => window.jarvis?.window?.close();
+  const handleClose = () => window.sprygen?.window?.close();
 
   const active = status === 'listening' || status === 'processing' || status === 'automating' || status === 'speaking';
   const statusLabel =

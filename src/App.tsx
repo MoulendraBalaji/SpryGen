@@ -12,14 +12,14 @@ import { RecallPanel } from "./components/RecallPanel";
 import { ScreenContext } from "./components/ScreenContext";
 import { AutomationPanel } from "./components/AutomationPanel";
 import { CommandPalette } from "./components/CommandPalette";
-import { jarvis } from "./lib/jarvis";
+import { sprygen } from "./lib/sprygen";
 import { useChat } from "./store/chat";
 
 export default function App() {
   const send = useChat((s) => s.send);
 
   useEffect(() => {
-    const unsubTranscript = jarvis.onEvent("voice:transcript", (text: string) => {
+    const unsubTranscript = sprygen.onEvent("voice:transcript", (text: string) => {
       send(text);
     });
 

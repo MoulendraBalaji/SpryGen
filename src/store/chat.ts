@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { ChatMessage, IntentResult } from "../../shared/types";
 
 interface ChatState {
@@ -14,7 +14,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: [],
   thinking: false,
   load: async () => {
-    const raw = (await jarvis.chat.history()) as ChatMessage[];
+    const raw = (await sprygen.chat.history()) as ChatMessage[];
     set({ messages: raw });
   },
   send: async (text) => {
@@ -26,7 +26,7 @@ export const useChat = create<ChatState>((set, get) => ({
       createdAt: Date.now()
     };
     set({ messages: [...get().messages, userMsg], thinking: true });
-    const res = await jarvis.chat.send(text);
+    const res = await sprygen.chat.send(text);
     const assistantMsg: ChatMessage = {
       id: `a-${Date.now()}`,
       role: "assistant",
@@ -46,7 +46,7 @@ export const useChat = create<ChatState>((set, get) => ({
       createdAt: Date.now()
     };
     set({ messages: [...get().messages, userMsg], thinking: true });
-    const description = await jarvis.screen.captureAndDescribe(prompt);
+    const description = await sprygen.screen.captureAndDescribe(prompt);
     const assistantMsg: ChatMessage = {
       id: `a-${Date.now()}`,
       role: "assistant",

@@ -1,4 +1,4 @@
-# 🤖 JARVIS — Voice-Locked, Invisible AI Desktop Assistant
+# 🌀 SPRYGEN — Voice-Commanded, Automation-Ready AI Desktop Assistant
 
 <p align="center">
   <img src="https://img.shields.io/badge/Electron-31.x-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron" />
@@ -14,17 +14,17 @@
 
 ## 🌟 Overview
 
-**JARVIS** is an ultra-fast, biometric-secured, invisible personal desktop assistant engineered with **Electron, React 18, TypeScript, and modern Claymorphism**. It is designed to seamlessly organize your academic and daily workflow by ingesting deadlines from multiple channels (Google Classroom, WhatsApp, phone notifications, and clipboard selections), while remaining silent and unobtrusive during gaming or deep work sessions.
+**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with hybrid Groq/Gemini/Ollama LLMs, ElevenLabs voice output, semantic memory, and optional encrypted PostgreSQL persistence — all while running silent and unobtrusive during gaming or deep-work sessions.
 
 ---
 
 ## ⚡ Key Highlights
 
-### 🎙️ 1. Voice-Locked Biometric Recognition
-* **Porcupine Wake Word**: Ultra low-power wake phrase listener (*"Hey JARVIS"*).
-* **Eagle Acoustic Voiceprint Verification**: Biometric speaker enrollment (8-sample acoustic voiceprint profile). Rejects unauthorized voices using cosine similarity scoring (threshold $\ge 0.85$).
-* **Privacy-First**: Audio analysis and voiceprints are computed and persisted locally in SQLite. No raw audio ever leaves your computer.
-* **Native TTS & Visual Feedback**: Integrated text-to-speech synthesis with real-time waveform and audio level indicators.
+### 🎙️ 1. Voice-Commanded Biometric Access
+* **Porcupine Wake Word**: Ultra low-power wake phrase listener (*"Hey SPRYGEN"*).
+* **Eagle Acoustic Voiceprint Verification**: Biometric speaker enrollment (8-sample acoustic voiceprint profile). Rejects unauthorized voices using cosine similarity scoring.
+* **Privacy-First**: Audio analysis and voiceprints are computed and persisted locally. No raw audio ever leaves your computer.
+* **ElevenLabs TTS (with native fallback)**: ElevenLabs voice synthesis renders every assistant reply with a natural voice; the OS synthesizer steps in automatically if the key is missing or the API is unreachable.
 
 ### 🪟 2. Invisible Overlay & Smart Distraction Shield
 * **Global Hotkey Summon**: Press `CmdOrCtrl + Shift + Space` (or `Alt + J`) to instantly bring up the floating assistant overlay.
@@ -32,27 +32,33 @@
 * **System Tray Resident**: Quick menu actions for toggling listening, opening settings, or running quick captures.
 
 ### 🔌 3. Multi-Source Ingest Adapters
-* 📚 **Google Classroom Sync**: RFC 8252 loopback OAuth 2.0 flow to pull course materials, assignments, and due dates into structured tasks.
 * 💬 **WhatsApp Web Extraction**: Intelligent text parsing for homework announcements and assignment deadlines.
 * 📱 **Mobile Notification Mirror**: Real-time WebSocket connection to mirror mobile alerts from Android/iOS.
 * 📋 **Global Clipboard Quick Capture (`CmdOrCtrl + Shift + J`)**: Highlight text anywhere on your OS to automatically extract dates and actions via `chrono-node`.
-* 🩺 **Integrations Health Monitor**: Live telemetry displaying connection status, sync history, and one-click re-authorization.
+* 🩺 **Integrations Health Monitor**: Live telemetry displaying connection status, sync history, and one-click re-authorization. Includes a **postgres dropdown health monitor** telling you whether encrypted Postgres persistence is active.
 
-### 🧠 4. Hybrid Local/Cloud NLP & Semantic Memory
+### 🤖 4. Automation Engine & Agent Capabilities
+* **Browser Automation (Selenium + BeautifulSoup)**: Multi-step browser tasks (navigate, click, type, extract, screenshot) with an operator **Kill Switch**, plus a dedicated **Web Scraper** panel.
+* **Web Scraping is a native agent tool**: ask the assistant to "scrape/summarize/analyze `<url>`" and SPRYGEN fetches the page, extracts clean text, and reasons over it with the LLM.
+* **Desktop Actions (PyAutoGUI)**: Screenshot, type, hotkeys, bounded mouse moves and clicks — all running with `FAILSAFE=True` and an abort flag.
+* **Hybrid LLM routing**: Groq → Gemini → Anthropic Claude → local Ollama → deterministic fast-path rules.
+
+### 🧠 5. Hybrid NLP & Encrypted Persistent Memory
 * **Multi-Tiered Query Engine**:
   1. Instant regex entity extraction and natural language date parsing (`chrono-node`).
   2. Prototype semantic matching for instant system controls.
-  3. Local Ollama LLM (`llama3.2`, `mistral`, `phi3`) for offline privacy.
-  4. Cloud LLM fallback (Claude 3.5 Sonnet / Anthropic API) when configured.
+  3. Cloud LLMs (Groq, Gemini, Claude) for complex reasoning.
+  4. Local Ollama LLM for offline privacy.
 * **Local RAG Vector Store**: 64-dimensional semantic text embeddings with cosine search for instant recall of facts, notes, and past tasks.
+* **Optional Encrypted PostgreSQL**: point `SPRYGEN_DATABASE_URL` at a Postgres instance and all app tables (tasks, chat, profile, memory) are mirrored **AES-256-GCM encrypted**. Without it, SPRYGEN transparently falls back to its local store.
 
-### 📱 5. Mobile Companion App
+### 📱 6. Mobile Companion App
 * Built on **React Native (Expo 51)**.
 * Fast local LAN pairing over port `8765` using secure 6-digit PIN handshake.
 * On-device notification listener and mobile task capture.
 
-### 🎨 6. Claymorphism Design System
-* Soft multi-layered inner/outer clay shadows, pastel color palettes, tactile switches, and the dynamic multi-state **AssistantOrb** (`idle`, `listening`, `thinking`, `speaking`).
+### 🎨 7. Opera GX + Arc Reactor Design System
+* Frameless **Opera GX** titlebar, tactical monospace dark shell, keyboard-first command palette (`Ctrl+K`), and a multi-ring **Arc Reactor HUD** that surfaces engine state (`idle`, `listening`, `processing`, `automating`, `error`).
 
 ---
 
@@ -66,28 +72,31 @@ flowchart TB
         MC_WS[LAN WebSocket Client]
     end
 
-    subgraph Desktop["💻 JARVIS Desktop (Electron + Vite)"]
+    subgraph Desktop["💻 SPRYGEN Desktop (Electron + Vite)"]
         subgraph Core["Main Process & Background Services"]
-            Voice[🎙️ Voice Engine & Biometrics]
+            Voice[🎙️ Voice Engine + ElevenLabs TTS]
             Overlay[🪟 Overlay & DND Manager]
             Router[🧠 Hybrid NLP Router]
+            Python[🐍 Python FastAPI Backend]
+            Auto[🤖 Automation Engine]
             SyncServer[📡 Sync Server :8765]
             DB[(🗄️ SQLite / JSON Store)]
+            PG[(🗄️ Optional Encrypted Postgres)]
         end
 
         subgraph Adapters["Ingest Adapters"]
-            GC[Google Classroom]
             WA[WhatsApp Web]
             Mirror[Notification Mirror]
             Manual[Clipboard Capture]
         end
 
-        subgraph Renderer["🎨 UI Renderer (React 18 + Claymorphism)"]
-            Orb[Assistant Orb]
+        subgraph Renderer["🎨 UI Renderer (React 18 + Opera GX)"]
+            HUD[Arc Reactor HUD]
             Briefing[Daily Briefing]
             Board[Task Board]
             Chat[Interactive Chat]
             Health[Integrations Health]
+            Automation[Automation Panel]
         end
     end
 
@@ -96,8 +105,9 @@ flowchart TB
     MC_WS <-->|LAN Sync & Pairing| SyncServer
 
     Adapters --> DB
-    Core --> DB
     Core <-->|IPC Bridge| Renderer
+    Core <--> Python
+    Python --> Auto
 ```
 
 ---
@@ -165,7 +175,7 @@ Packaged installers and executables will be generated in the `release/` director
 
 | Shortcut | Action | Scope |
 | :--- | :--- | :--- |
-| `CmdOrCtrl + Shift + Space` | Summon / Hide JARVIS Overlay | System-wide |
+| `CmdOrCtrl + Shift + Space` | Summon / Hide SPRYGEN Overlay | System-wide |
 | `Alt + J` | Alternative Toggle Overlay | System-wide |
 | `CmdOrCtrl + Shift + J` | Quick Capture Selected Text to Task | System-wide |
 
@@ -177,18 +187,21 @@ Create a `.env` file in the root directory (see [`.env.example`](file:///.env.ex
 
 ```env
 # AI & LLM Endpoints
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-JARVIS_OLLAMA_URL=http://127.0.0.1:11434
+ANTHROPIC_API_KEY=your_anthropic_api_key_here   # optional
+GEMINI_API_KEY=your_gemini_api_key_here         # optional
+GROQ_API_KEY=your_groq_api_key_here             # fast cloud LLM routing
+ELEVENLABS_API_KEY=your_elevenlabs_api_key       # voice TTS
+SPRYGEN_OLLAMA_URL=http://127.0.0.1:11434
 
 # Voice & Biometrics (Picovoice Porcupine / Eagle)
 PICOVOICE_ACCESS_KEY=your_picovoice_access_key
 
-# Integrations (Google Classroom OAuth 2.0)
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-
 # Device Sync
-JARVIS_SYNC_PORT=8765
+SPRYGEN_SYNC_PORT=8765
+
+# Optional encrypted PostgreSQL persistence
+# SPRYGEN_DATABASE_URL=postgres://user:pass@host:5432/sprygen
+# SPRYGEN_DB_ENCRYPTION_KEY=your_32+_char_encryption_passphrase
 ```
 
 ---
@@ -196,29 +209,32 @@ JARVIS_SYNC_PORT=8765
 ## 📁 Repository Structure
 
 ```
-Jarvis_Assistant/
+Sprygen_Assistant/
 ├── electron/                   # Electron Main & Preload Processes
-│   ├── auth/                   # OAuth2 Loopback Handlers
 │   ├── ipc/                    # Type-Safe IPC Channel Registrations
 │   ├── services/               # Background Services & Ingest Adapters
-│   │   ├── adapters/           # Classroom, WhatsApp, Notification Ingest
+│   │   ├── adapters/           # WhatsApp, Notification Ingest
+│   │   ├── automation/         # (backend) Selenium / PyAutoGUI suite
 │   │   ├── voice/              # Porcupine & Eagle Voice Engines
 │   │   ├── db.ts               # SQLite / JSON Fallback Database
+│   │   ├── postgres.ts         # Optional AES-256-GCM encrypted mirror
+│   │   ├── encryption.ts       # AES-256-GCM primitives
 │   │   ├── overlay.ts          # Window State Machine & DND Manager
 │   │   └── router.ts           # Hybrid NLP Intent Classifier
 │   ├── main.ts                 # Main Process Entry Point
 │   └── preload.ts              # CommonJS Context Bridge Preload
 ├── src/                        # React 18 Renderer Process
-│   ├── components/             # Claymorphic UI Components & AssistantOrb
+│   ├── components/             # Opera GX Shell, HUD, Panels
 │   ├── design-system/          # Clay Tokens, Buttons, Inputs, Cards
 │   ├── lib/                    # Client IPC Proxies & API Fallbacks
 │   ├── store/                  # Zustand Global State Stores
 │   ├── App.tsx                 # Core Dashboard Shell
 │   └── main.tsx                # React Mount with Error Boundary
+├── backend/                    # Python FastAPI multi-agent backend
+│   ├── agents/                 # Chat / Task / Memory / Briefing agents
+│   ├── services/automation/    # Selenium + PyAutoGUI + BeautifulSoup
+│   └── server.py               # FastAPI app (port 8766)
 ├── companion-app/              # React Native (Expo) Mobile Companion
-│   ├── screens/                # Mobile Pairing & Quick Capture Views
-│   ├── services/               # LAN WebSocket Handshake & Listeners
-│   └── package.json            # Expo App Dependencies
 ├── shared/                     # Shared TypeScript Interfaces & Types
 ├── electron-builder.yml        # Multi-Platform Packaging Specs
 ├── electron.vite.config.ts     # Electron-Vite Bundler Configuration
@@ -232,7 +248,8 @@ Jarvis_Assistant/
 
 * **100% Local Storage**: All tasks, history, notes, and biometric embeddings are saved directly on your device.
 * **Biometric Protection**: Speaker voiceprints are stored as numeric vectors without retaining raw audio files.
-* **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs strictly over your local Wi-Fi network with PIN encryption.
+* **Optional Encrypted Postgres**: When enabled, everything is mirrored into PostgreSQL encrypted with **AES-256-GCM** (`SPRYGEN_DB_ENCRYPTION_KEY`). Records stay unreadable at rest without the key.
+* **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs strictly over your local Wi-Fi network with PIN pairing.
 
 ---
 

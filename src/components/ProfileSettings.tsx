@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ClayCard, ClayButton, ClayInput, ClayToggle, ClayBadge } from "../design-system";
 import { useProfile } from "../store/profile";
 import { useVoice } from "../store/voice";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { DeviceSyncStatus, VoiceEnrollmentProgress, VoiceStatus } from "../../shared/types";
 
 export function ProfileSettings() {
@@ -19,7 +19,7 @@ export function ProfileSettings() {
     voice.load();
     loadVoiceAndSync();
 
-    const unsubVoice = jarvis.onEvent("voice:enroll-progress", (p: VoiceEnrollmentProgress) => {
+    const unsubVoice = sprygen.onEvent("voice:enroll-progress", (p: VoiceEnrollmentProgress) => {
       setEnrollProgress(p);
       if (p.status === "completed" || p.status === "failed") {
         setEnrolling(false);
@@ -27,7 +27,7 @@ export function ProfileSettings() {
       }
     });
 
-    const unsubSync = jarvis.onEvent("sync:paired", () => {
+    const unsubSync = sprygen.onEvent("sync:paired", () => {
       loadVoiceAndSync();
     });
 
@@ -43,9 +43,9 @@ export function ProfileSettings() {
 
   const loadVoiceAndSync = async () => {
     try {
-      const vs = await jarvis.voice.getStatus();
+      const vs = await sprygen.voice.getStatus();
       setVoiceStatus(vs);
-      const ss = await jarvis.sync.getStatus();
+      const ss = await sprygen.sync.getStatus();
       setSyncStatus(ss);
     } catch {
       /* ignore */
@@ -61,7 +61,7 @@ export function ProfileSettings() {
       message: "Starting voice enrollment. Speak 'Hey SPRYGEN' clearly..."
     });
     try {
-      await jarvis.voice.enroll();
+      await sprygen.voice.enroll();
     } catch {
       setEnrolling(false);
     }
@@ -69,7 +69,7 @@ export function ProfileSettings() {
 
   const handleRegenerateCode = async () => {
     try {
-      const code = await jarvis.sync.regenerateCode();
+      const code = await sprygen.sync.regenerateCode();
       if (syncStatus) setSyncStatus({ ...syncStatus, pairingCode: code });
     } catch {
       /* ignore */
@@ -169,7 +169,7 @@ export function ProfileSettings() {
           <ClayButton variant="primary" onClick={handleEnrollVoice} disabled={enrolling}>
             {enrolling ? "Capturing Voice…" : voiceStatus?.enrolled ? "Re-enroll Voiceprint" : "Enroll Voiceprint"}
           </ClayButton>
-          <ClayButton variant="ghost" onClick={() => jarvis.voice.speak("SPRYGEN voice synthesizer online and ready.")}>
+          <ClayButton variant="ghost" onClick={() => sprygen.voice.speak("SPRYGEN voice synthesizer online and ready.")}>
             Test Speech (TTS)
           </ClayButton>
         </div>

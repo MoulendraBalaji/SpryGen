@@ -1,8 +1,8 @@
-import { JarvisAPI, UserProfile, VoiceStatus, DeviceSyncStatus, IntentResult } from "../../shared/types";
+import { SprygenAPI, UserProfile, VoiceStatus, DeviceSyncStatus, IntentResult } from "../../shared/types";
 
 declare global {
   interface Window {
-    jarvis?: JarvisAPI;
+    sprygen?: SprygenAPI;
   }
 }
 
@@ -36,7 +36,7 @@ const defaultIntent: IntentResult = {
   answer: "SPRYGEN is initializing…"
 };
 
-const fallbackAPI: JarvisAPI = {
+const fallbackAPI: SprygenAPI = {
   tasks: {
     list: async () => [],
     create: async () => ({} as any),
@@ -109,10 +109,10 @@ const fallbackAPI: JarvisAPI = {
   }
 };
 
-export const jarvis: JarvisAPI = new Proxy({} as JarvisAPI, {
-  get(_target, prop: keyof JarvisAPI) {
-    if (typeof window !== "undefined" && window.jarvis && (window.jarvis as any)[prop] !== undefined) {
-      return (window.jarvis as any)[prop];
+export const sprygen: SprygenAPI = new Proxy({} as SprygenAPI, {
+  get(_target, prop: keyof SprygenAPI) {
+    if (typeof window !== "undefined" && window.sprygen && (window.sprygen as any)[prop] !== undefined) {
+      return (window.sprygen as any)[prop];
     }
     return (fallbackAPI as any)[prop];
   }

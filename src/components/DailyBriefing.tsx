@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ClayCard, ClayButton } from "../design-system";
-import { jarvis } from "../lib/jarvis";
+import { sprygen } from "../lib/sprygen";
 import { BriefingItem } from "../../shared/types";
 
 export function DailyBriefing() {
@@ -9,7 +9,7 @@ export function DailyBriefing() {
 
   const generate = async () => {
     setLoading(true);
-    const res = (await jarvis.briefing.generate()) as BriefingItem[];
+    const res = (await sprygen.briefing.generate()) as BriefingItem[];
     setItems(res);
     setLoading(false);
   };
