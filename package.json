@@ -28,7 +28,6 @@
     "electron-log": "^5.4.4",
     "lucide-react": "^1.43.0",
     "node-cron": "^3.0.3",
-    "pg": "^8.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"
@@ -41,7 +40,6 @@
     "@tailwindcss/typography": "^0.5.20",
     "@types/node": "^20.14.0",
     "@types/node-cron": "^3.0.11",
-    "@types/pg": "^8.23.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

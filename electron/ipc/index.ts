@@ -12,7 +12,6 @@ import { screenContext } from "../services/screenContext";
 import { uiAutomation } from "../services/uiAutomation";
 import { vectorStore } from "../services/vectorStore";
 import { deviceSync } from "../services/deviceSync";
-import { pgStore } from "../services/postgres";
 import { AdapterState, OverlayMode } from "../../shared/types";
 
 const PYTHON_BACKEND_URL = "http://127.0.0.1:8766";
@@ -77,36 +76,6 @@ export function registerIpc() {
     lastSyncAt: null,
     category: "config"
   });
-
-  // Encrypted PostgreSQL storage health row.
-  healthMonitor.register({
-    id: "pg",
-    label: "Encrypted Database",
-    description: pgStore.isConnected
-      ? "PostgreSQL active — app data persisted AES-256-GCM encrypted."
-      : pgStore.status().configured
-        ? "PostgreSQL configured but unreachable — falling back to local store."
-        : "Not configured — set SPRYGEN_DATABASE_URL to enable encrypted Postgres storage.",
-    status: pgStore.isConnected ? "healthy" : "degraded",
-    lastSyncAt: null,
-    category: "config"
-  });
-
-  // Background mirror: push the app's working tables into Postgres, encrypted.
-  const snapshotAll = () => {
-    if (!pgStore.isConnected) return;
-    void pgStore
-      .snapshot({
-        tasks: dbLayer.all("tasks"),
-        chat: dbLayer.all("chat"),
-        profile: dbLayer.all("profile"),
-        memory: dbLayer.all("memory"),
-        assignments: dbLayer.all("assignments")
-      })
-      .catch(() => undefined);
-  };
-  snapshotAll();
-  setInterval(snapshotAll, 60_000);
 
   // Stream health-monitor changes (backend probes, adapter reconnects) to the renderer.
   healthMonitor.subscribe(() => pushEvent("integrations:update"));
@@ -236,9 +205,6 @@ export function registerIpc() {
   ipcMain.handle("profile:get", () => profileService.get());
   ipcMain.handle("profile:set", (_e, patch) => profileService.set(patch));
   ipcMain.handle("profile:deleteFact", (_e, key) => profileService.deleteFact(key));
-
-  // Encrypted PostgreSQL IPC
-  ipcMain.handle("pg:status", () => pgStore.status());
 
   // Briefing IPC — proxies to Python backend
   ipcMain.handle("briefing:generate", async () => {

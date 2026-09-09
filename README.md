@@ -14,7 +14,7 @@
 
 ## 🌟 Overview
 
-**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with hybrid Groq/Gemini/Ollama LLMs, ElevenLabs voice output, semantic memory, and optional encrypted PostgreSQL persistence — all while running silent and unobtrusive during gaming or deep-work sessions.
+**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with hybrid Groq/Gemini/Ollama LLMs, ElevenLabs voice output, semantic memory, and local-first storage — all while running silent and unobtrusive during gaming or deep-work sessions.
 
 ---
 
@@ -35,7 +35,7 @@
 * 💬 **WhatsApp Web Extraction**: Intelligent text parsing for homework announcements and assignment deadlines.
 * 📱 **Mobile Notification Mirror**: Real-time WebSocket connection to mirror mobile alerts from Android/iOS.
 * 📋 **Global Clipboard Quick Capture (`CmdOrCtrl + Shift + J`)**: Highlight text anywhere on your OS to automatically extract dates and actions via `chrono-node`.
-* 🩺 **Integrations Health Monitor**: Live telemetry displaying connection status, sync history, and one-click re-authorization. Includes a **postgres dropdown health monitor** telling you whether encrypted Postgres persistence is active.
+* 🩺 **Integrations Health Monitor**: Live telemetry displaying connection status and one-click re-authorization for all wired services.
 
 ### 🤖 4. Automation Engine & Agent Capabilities
 * **Browser Automation (Selenium + BeautifulSoup)**: Multi-step browser tasks (navigate, click, type, extract, screenshot) with an operator **Kill Switch**, plus a dedicated **Web Scraper** panel.
@@ -50,7 +50,6 @@
   3. Cloud LLMs (Groq, Gemini) for complex reasoning.
   4. Local Ollama LLM for offline privacy.
 * **Local RAG Vector Store**: 64-dimensional semantic text embeddings with cosine search for instant recall of facts, notes, and past tasks.
-* **Optional Encrypted PostgreSQL**: point `SPRYGEN_DATABASE_URL` at a Postgres instance and all app tables (tasks, chat, profile, memory) are mirrored **AES-256-GCM encrypted**. Without it, SPRYGEN transparently falls back to its local store.
 
 ### 📱 6. Mobile Companion App
 * Built on **React Native (Expo 51)**.
@@ -81,7 +80,6 @@ flowchart TB
             Auto[🤖 Automation Engine]
             SyncServer[📡 Sync Server :8765]
             DB[(🗄️ SQLite / JSON Store)]
-            PG[(🗄️ Optional Encrypted Postgres)]
         end
 
         subgraph Adapters["Ingest Adapters"]
@@ -123,7 +121,7 @@ flowchart TB
 
 ```bash
 # Clone the repository
-git clone https://github.com/MoulendraBalaji/Jarvis_Assistant.git
+git clone https://github.com/MoulendraBalaji/sprygen.git
 cd Jarvis_Assistant
 
 # Install Desktop dependencies
@@ -197,10 +195,6 @@ PICOVOICE_ACCESS_KEY=your_picovoice_access_key
 
 # Device Sync
 SPRYGEN_SYNC_PORT=8765
-
-# Optional encrypted PostgreSQL persistence
-# SPRYGEN_DATABASE_URL=postgres://user:pass@host:5432/sprygen
-# SPRYGEN_DB_ENCRYPTION_KEY=your_32+_char_encryption_passphrase
 ```
 
 ---
@@ -216,8 +210,6 @@ Sprygen_Assistant/
 │   │   ├── automation/         # (backend) Selenium / PyAutoGUI suite
 │   │   ├── voice/              # Porcupine & Eagle Voice Engines
 │   │   ├── db.ts               # SQLite / JSON Fallback Database
-│   │   ├── postgres.ts         # Optional AES-256-GCM encrypted mirror
-│   │   ├── encryption.ts       # AES-256-GCM primitives
 │   │   ├── overlay.ts          # Window State Machine & DND Manager
 │   │   └── router.ts           # Hybrid NLP Intent Classifier
 │   ├── main.ts                 # Main Process Entry Point
@@ -247,7 +239,6 @@ Sprygen_Assistant/
 
 * **100% Local Storage**: All tasks, history, notes, and biometric embeddings are saved directly on your device.
 * **Biometric Protection**: Speaker voiceprints are stored as numeric vectors without retaining raw audio files.
-* **Optional Encrypted Postgres**: When enabled, everything is mirrored into PostgreSQL encrypted with **AES-256-GCM** (`SPRYGEN_DB_ENCRYPTION_KEY`). Records stay unreadable at rest without the key.
 * **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs strictly over your local Wi-Fi network with PIN pairing.
 
 ---
