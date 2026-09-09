@@ -1,11 +1,11 @@
 {
-  "name": "jarvis-assistant",
-  "version": "2.0.0",
-  "description": "JARVIS — Voice-Locked, Invisible AI Desktop Assistant with Local Biometrics, Multi-source Coursework Sync & Mobile Companion",
+  "name": "sprygen",
+  "version": "3.0.0",
+  "description": "SPRYGEN — Voice-locked AI desktop assistant with persistent voice engine, browser/desktop automation, and tactical HUD interface",
   "author": "Moulendra Balaji",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoulendraBalaji/Jarvis_Assistant.git"
+    "url": "https://github.com/MoulendraBalaji/Sprygen.git"
   },
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -25,6 +25,8 @@
   },
   "dependencies": {
     "chrono-node": "^2.7.6",
+    "electron-log": "^5.4.4",
+    "lucide-react": "^1.43.0",
     "node-cron": "^3.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -35,14 +37,18 @@
     "keytar": "^7.9.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
     "@types/node": "^20.14.0",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.5.5",
     "electron": "^31.3.0",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"
   }

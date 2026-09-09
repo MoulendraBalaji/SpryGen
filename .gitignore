@@ -1,3 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+
 # Dependencies
 node_modules/
 companion-app/node_modules/
@@ -24,8 +28,8 @@ build/
 *.db-journal
 *.sqlite
 *.sqlite3
-jarvis.json
-jarvis.db
+sprygen.json
+sprygen.db
 
 # Logs
 logs/
