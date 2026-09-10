@@ -63,16 +63,15 @@ jobs:
       - name: Package app
         run: npm run ${{ matrix.script }} -- --publish never
 
-      - name: Rename Windows installer
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: Get-ChildItem release -Filter *.exe | Where-Object { $_.Name -match 'nsis' } | ForEach-Object { Rename-Item $_.FullName 'SPRYGEN-Windows-installer.exe' }
-
       - name: Collect installer artifacts
         shell: bash
         run: |
           mkdir -p artifacts
-          cp -f release/Sprygen-* artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-*.exe artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-*.dmg artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-*.deb artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-*.AppImage artifacts/ 2>/dev/null || true
+          cp -f release/Sprygen-*.blockmap artifacts/ 2>/dev/null || true
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
