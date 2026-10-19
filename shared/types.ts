@@ -92,7 +92,8 @@ export interface VoiceStatus {
   state: VoiceState;
   enrolled: boolean;
   active: boolean;
-  accessKeyConfigured: boolean;
+  /** Whether the local Python voice engine (capture + speaker model) is available. */
+  engineAvailable: boolean;
   speakerSimilarityThreshold: number;
 }
 

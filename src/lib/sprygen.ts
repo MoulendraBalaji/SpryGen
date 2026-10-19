@@ -18,7 +18,7 @@ const defaultVoiceStatus: VoiceStatus = {
   state: "idle",
   enrolled: false,
   active: false,
-  accessKeyConfigured: false,
+  engineAvailable: false,
   speakerSimilarityThreshold: 0.85
 };
 

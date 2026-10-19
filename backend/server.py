@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from .config import SERVER_HOST, SERVER_PORT
 from .agents.orchestrator import Orchestrator
 from .services.automation import automation
+from .services import voice as voice_service
+from .services.vision import describe_image
 
 
 orchestrator = Orchestrator()
@@ -63,6 +65,34 @@ class BrowserTaskRequest(BaseModel):
 class DesktopActionRequest(BaseModel):
     command: str
     params: dict[str, Any] = {}
+
+
+class VoiceSampleRequest(BaseModel):
+    seconds: float = 3.0
+
+
+class VoiceVerifyRequest(BaseModel):
+    reference: list[float] = []
+    seconds: float = 3.0
+    threshold: float = 0.75
+
+
+class VoiceTranscribeRequest(BaseModel):
+    seconds: float = 5.0
+
+
+class VoiceTtsRequest(BaseModel):
+    text: str
+
+
+class VoiceStartRequest(BaseModel):
+    reference: list[float] = []
+    threshold: float = 0.75
+
+
+class VisionRequest(BaseModel):
+    image: str
+    prompt: str = "Describe what is on the screen."
 
 
 @asynccontextmanager
@@ -179,6 +209,59 @@ def automation_browser_task(req: BrowserTaskRequest):
 def automation_desktop_action(req: DesktopActionRequest):
     result = automation.desktop_action(req.command, req.params)
     return _serialize_auth_result(result)
+
+
+# ---------------------------------------------------------------------------
+# Voice API — local, offline pipeline (openWakeWord / faster-whisper /
+# Resemblyzer / Kokoro). Handlers that touch the microphone are sync `def` so
+# FastAPI runs them on its worker threadpool; they block for seconds.
+# ---------------------------------------------------------------------------
+@app.get("/api/voice/status")
+def voice_status():
+    return voice_service.status()
+
+
+@app.post("/api/voice/sample")
+def voice_sample(req: VoiceSampleRequest):
+    return voice_service.sample(req.seconds)
+
+
+@app.post("/api/voice/verify")
+def voice_verify(req: VoiceVerifyRequest):
+    return voice_service.verify_sample(req.reference, req.seconds, req.threshold)
+
+
+@app.post("/api/voice/transcribe")
+def voice_transcribe(req: VoiceTranscribeRequest):
+    return voice_service.transcribe_sample(req.seconds)
+
+
+@app.post("/api/voice/tts")
+def voice_tts(req: VoiceTtsRequest):
+    return voice_service.synthesize(req.text)
+
+
+@app.post("/api/voice/start")
+def voice_start(req: VoiceStartRequest):
+    return voice_service.start(req.reference, req.threshold)
+
+
+@app.post("/api/voice/stop")
+def voice_stop():
+    return voice_service.stop()
+
+
+@app.get("/api/voice/events")
+def voice_events():
+    return voice_service.drain_events()
+
+
+# ---------------------------------------------------------------------------
+# Vision API — local screen understanding via Ollama (llava-class).
+# ---------------------------------------------------------------------------
+@app.post("/api/vision/describe")
+def vision_describe(req: VisionRequest):
+    return describe_image(req.image, req.prompt)
 
 
 @app.websocket("/ws")

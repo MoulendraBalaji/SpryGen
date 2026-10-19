@@ -179,7 +179,7 @@ export function ProfileSettings() {
             <div style={{ fontSize: 12 }}>Automatic listening (wake word)</div>
             <div className="console-meta">
               state: {voice.status?.state ?? "…"}
-              {voice.status?.accessKeyConfigured ? "" : " · no Picovoice key, simulated"}
+              {voice.status?.engineAvailable ? "" : " · voice engine unavailable"}
             </div>
           </div>
           <ClayToggle

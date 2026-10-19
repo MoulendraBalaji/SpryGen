@@ -14,17 +14,18 @@
 
 ## 🌟 Overview
 
-**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with hybrid Groq/Gemini/Ollama LLMs, ElevenLabs voice output, semantic memory, and local-first storage — all while running silent and unobtrusive during gaming or deep-work sessions.
+**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with a keyless hybrid Groq/Cerebras/OpenRouter/Mistral/Ollama LLM chain, a fully-local offline voice pipeline, semantic memory, and local-first storage — all while running silent and unobtrusive during gaming or deep-work sessions.
 
 ---
 
 ## ⚡ Key Highlights
 
 ### 🎙️ 1. Voice-Commanded Biometric Access
-* **Porcupine Wake Word**: Ultra low-power wake phrase listener (*"Hey SPRYGEN"*).
-* **Eagle Acoustic Voiceprint Verification**: Biometric speaker enrollment (8-sample acoustic voiceprint profile). Rejects unauthorized voices using cosine similarity scoring.
-* **Privacy-First**: Audio analysis and voiceprints are computed and persisted locally. No raw audio ever leaves your computer.
-* **ElevenLabs TTS (with native fallback)**: ElevenLabs voice synthesis renders every assistant reply with a natural voice; the OS synthesizer steps in automatically if the key is missing or the API is unreachable.
+* **Wake Word (openWakeWord)**: fully offline wake-phrase listener — no access key, no cloud.
+* **Local Speaker Verification (Resemblyzer)**: enrollment records real audio, computes a 256-dimensional speaker embedding, and stores the averaged voiceprint locally. A cosine-similarity comparison against a fresh recording forms the speaker lock. If the local models are missing the lock **fails closed** (nothing is ever verified).
+* **Privacy-First**: audio capture, speaker embeddings, transcription (faster-whisper) and speech synthesis (Kokoro) all run on your machine. No raw audio ever leaves your computer.
+* **Local TTS with native fallback**: Kokoro renders replies offline; the OS synthesizer steps in automatically only if the local engine is unavailable.
+* ⚠️ **The speaker lock is not a strong security boundary.** It can be fooled by a recording (replay attack) or a synthetic/cloned copy of your voice, so treat it as a convenience gate, not authentication for sensitive data.
 
 ### 🪟 2. Invisible Overlay & Smart Distraction Shield
 * **Global Hotkey Summon**: Press `CmdOrCtrl + Shift + Space` (or `Alt + J`) to instantly bring up the floating assistant overlay.
@@ -73,7 +74,7 @@ flowchart TB
 
     subgraph Desktop["💻 SPRYGEN Desktop (Electron + Vite)"]
         subgraph Core["Main Process & Background Services"]
-            Voice[🎙️ Voice Engine + ElevenLabs TTS]
+            Voice[🎙️ Local Voice Engine (Python sidecar)]
             Overlay[🪟 Overlay & DND Manager]
             Router[🧠 Hybrid NLP Router]
             Python[🐍 Python FastAPI Backend]
@@ -184,17 +185,21 @@ Packaged installers and executables will be generated in the `release/` director
 Create a `.env` file in the root directory (see [`.env.example`](file:///.env.example)):
 
 ```env
-# AI & LLM Endpoints
-GEMINI_API_KEY=your_gemini_api_key_here         # optional
-GROQ_API_KEY=your_groq_api_key_here             # fast cloud LLM routing
-ELEVENLABS_API_KEY=your_elevenlabs_api_key       # voice TTS
-SPRYGEN_OLLAMA_URL=http://127.0.0.1:11434
+# AI & LLM Services (all optional — SPRYGEN runs fully offline via Ollama)
+GROQ_API_KEY=""                     # Groq (free tier) - fast cloud fallback
+CEREBRAS_API_KEY=""                 # Cerebras (free tier)
+OPENROUTER_API_KEY=""               # OpenRouter (use :free models)
+MISTRAL_API_KEY=""                  # Mistral (free tier)
+SPRYGEN_OLLAMA_URL="http://127.0.0.1:11434" # Local Ollama endpoint (no key)
 
-# Voice & Biometrics (Picovoice Porcupine / Eagle)
-PICOVOICE_ACCESS_KEY=your_picovoice_access_key
+# Local voice pipeline (optional, no API keys - see backend/requirements-voice.txt)
+# SPRYGEN_WAKE_MODEL=""             # Path to a custom openWakeWord model (.onnx); blank = bundled default
+# SPRYGEN_WHISPER_MODEL="base.en"   # faster-whisper model size
+# SPRYGEN_TTS_VOICE="af_heart"      # Kokoro voice
+# SPRYGEN_VISION_MODEL="llava"      # Ollama vision model for screen understanding
 
-# Device Sync
-SPRYGEN_SYNC_PORT=8765
+# Device Sync Server
+SPRYGEN_SYNC_PORT=8765              # WebSocket sync port for mobile companion app
 ```
 
 ---
@@ -208,7 +213,7 @@ Sprygen_Assistant/
 │   ├── services/               # Background Services & Ingest Adapters
 │   │   ├── adapters/           # WhatsApp, Notification Ingest
 │   │   ├── automation/         # (backend) Selenium / PyAutoGUI suite
-│   │   ├── voice/              # Porcupine & Eagle Voice Engines
+│   │   ├── voice/              # Thin client over the local Python voice engine
 │   │   ├── db.ts               # SQLite / JSON Fallback Database
 │   │   ├── overlay.ts          # Window State Machine & DND Manager
 │   │   └── router.ts           # Hybrid NLP Intent Classifier

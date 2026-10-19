@@ -1,0 +1,16 @@
+# Optional local voice pipeline (offline; no API keys).
+#
+# None of these are required to run SPRYGEN — the app starts without them and
+# the voice features fail closed with a clear "not installed" message. Install
+# them only if you want wake-word listening, speech-to-text, the speaker lock,
+# and local text-to-speech:
+#
+#   pip install -r backend/requirements-voice.txt
+#
+# See THIRD_PARTY.md for the licenses of these components.
+numpy>=1.24
+sounddevice>=0.4.6
+openwakeword>=0.6.0
+faster-whisper>=1.0.0
+resemblyzer>=0.1.1
+kokoro>=0.3.4

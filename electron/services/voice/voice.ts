@@ -6,6 +6,7 @@ import { writeFile, unlink } from "node:fs/promises";
 import electronLog from "electron-log";
 import { dbLayer } from "../db";
 import { profileService } from "../profileService";
+import { proxyToPython } from "../pythonClient";
 import { VoiceEnrollmentProgress, VoiceState, VoiceStatus } from "../../../shared/types";
 
 // ---------------------------------------------------------------------------
@@ -27,14 +28,11 @@ export const enum VoiceErrorMsg {
   PERMISSION_DENIED = "Microphone access is blocked by the operating system.",
   DEVICE_NOT_FOUND = "No audio input device was found.",
   RECORDER_TIMEOUT = "Audio buffer starvation — recorder produced no frames.",
-  ENGINE_FAILURE = "Wake-word engine crashed or the Picovoice access key is missing.",
+  ENGINE_FAILURE = "The local voice engine is unavailable. Install backend/requirements-voice.txt.",
 }
 
 // Scoped diagnostic logger — file + console forwarding, never silent.
-// electron-log scoped loggers forward to the shared transports by default.
 const log = electronLog.scope("voice-engine");
-electronLog.transports.file.level = "info";
-electronLog.transports.console.level = "info";
 
 interface Voiceprint {
   id: string;
@@ -43,117 +41,71 @@ interface Voiceprint {
   sampleCount: number;
 }
 
-// ---------------------------------------------------------------------------
-// Persistent Audio Capture Loop (singleton)
-//
-// Holds a single frame buffer/producer for the whole app lifetime so renderer
-// reloads or page switches NEVER tear down the recording stream. The wake-word
-// and speaker-verification engines run entirely inside the main process, and
-// status changes are pushed to the renderer over async webContents.send pipes.
-// ---------------------------------------------------------------------------
-class PersistentRecorder {
-  private sampleRate = 16000;
-  private framesPerSample = 512;
-  private timer: NodeJS.Timeout | null = null;
-  private listening = false;
-  private bufferStalls = 0;
-
-  start(): boolean {
-    if (this.listening) return true;
-    this.listening = true;
-
-    try {
-      this.timer = setInterval(() => {
-        if (this.bufferStalls > 6) {
-          this.stop();
-          log.error("Recorder polling exceeded stall budget; halting capture");
-          return;
-        }
-        this.bufferStalls = 0;
-      }, 2000);
-      log.info(`Persistent PvRecorder loop started @ ${this.sampleRate}Hz (main process)`);
-      return true;
-    } catch (err) {
-      log.error("PvRecorder failed to initialize", err);
-      this.listening = false;
-      return false;
-    }
-  }
-
-  stop(): void {
-    this.listening = false;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    log.info("Persistent PvRecorder loop stopped");
-  }
-
-  isActive(): boolean {
-    return this.listening;
-  }
-
-  ping(): void {
-    this.bufferStalls = 0;
-  }
-
-  // Primitive error taxonomy: surfaces the real-world failure class for a given
-  // platform (e.g. Windows disallows mic entirely → PERMISSION_DENIED).
-  classify(error: unknown): VoiceErrorPayload {
-    const msg = error instanceof Error ? error.message : String(error);
-    const low = msg.toLowerCase();
-
-    if (/permission|denied|not allowed|blocked/i.test(low)) {
-      return { code: "PERMISSION_DENIED", message: VoiceErrorMsg.PERMISSION_DENIED };
-    }
-    if (/not found|no device|no audio input|microphone/i.test(low)) {
-      return { code: "DEVICE_NOT_FOUND", message: VoiceErrorMsg.DEVICE_NOT_FOUND };
-    }
-    if (/timeout|starvation|no frames|empty buffer/i.test(low)) {
-      return { code: "RECORDER_TIMEOUT", message: VoiceErrorMsg.RECORDER_TIMEOUT };
-    }
-    return { code: "ENGINE_FAILURE", message: VoiceErrorMsg.ENGINE_FAILURE };
-  }
+interface PythonStatus {
+  ok?: boolean;
+  running?: boolean;
+  components?: Record<string, boolean>;
 }
 
+interface PythonEvent {
+  type?: string;
+  level?: number;
+  score?: number;
+  text?: string;
+  message?: string;
+}
+
+/** How often the main process drains wake/transcript events from Python. */
+const EVENT_POLL_MS = 300;
+/** Number of enrollment samples averaged into the voiceprint. */
+const ENROLL_SAMPLES = 5;
+
+/**
+ * Thin client over the local Python voice pipeline.
+ *
+ * All audio capture, wake-word detection, transcription and speaker embeddings
+ * happen inside the Python sidecar (`backend/services/voice`). The Electron main
+ * process only orchestrates: it persists the enrolled voiceprint in SQLite,
+ * forwards events to the renderer, and plays synthesised audio.
+ *
+ * Every operation fails **closed**: if the Python voice engine or the models are
+ * unavailable, speaker verification returns `verified: false` and enrollment
+ * refuses to persist a fabricated voiceprint.
+ */
 class VoiceService extends EventEmitter {
   private state: VoiceState = "idle";
   private isEnrolled = false;
   private isActive = false;
-  private accessKey: string | null = null;
-  private similarityThreshold = 0.78;
+  private similarityThreshold = 0.75;
   private activeVoiceprint: Voiceprint | null = null;
-  private simulatedListeningTimer: NodeJS.Timeout | null = null;
-  private wakeWordTimer: NodeJS.Timeout | null = null;
-  private recorder: PersistentRecorder;
+  private eventPollTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
-    this.recorder = new PersistentRecorder();
-    this.accessKey = process.env.PICOVOICE_ACCESS_KEY || process.env.PORCUPINE_ACCESS_KEY || null;
     this.loadEnrolledProfile();
-    log.info("VoiceService constructed (persistent singleton).");
   }
 
   private loadEnrolledProfile(): void {
     try {
-      const rows = dbLayer.all("profile") as any[];
-      const vpRow = rows.find((r) => r.key === "voiceprint");
-      if (vpRow && vpRow.value) {
-        this.activeVoiceprint = JSON.parse(vpRow.value);
-        this.isEnrolled = true;
-      } else {
-        this.isEnrolled = false;
+      const row = dbLayer.get("profile", "voiceprint") as { value?: string } | undefined;
+      if (row?.value) {
+        const parsed = JSON.parse(row.value) as Voiceprint;
+        if (Array.isArray(parsed.embedding) && parsed.embedding.length > 0) {
+          this.activeVoiceprint = parsed;
+          this.isEnrolled = true;
+          return;
+        }
       }
-    } catch {
-      this.isEnrolled = false;
+    } catch (err) {
+      log.warn("Could not load the enrolled voiceprint", err);
     }
+    this.activeVoiceprint = null;
+    this.isEnrolled = false;
   }
 
-  public setState(newState: VoiceState): void {
-    if (this.state === newState) return;
-    this.state = newState;
-    log.info(`state-change → ${newState}`);
+  public setState(state: VoiceState): void {
+    if (this.state === state) return;
+    this.state = state;
     this.emit("state-change", this.state);
   }
 
@@ -161,34 +113,28 @@ class VoiceService extends EventEmitter {
     return this.state;
   }
 
-  public getStatus(): VoiceStatus {
+  private async pythonStatus(): Promise<PythonStatus | null> {
+    const res = await proxyToPython<PythonStatus>("/api/voice/status", {}, 4000);
+    return res.ok ? res.data : null;
+  }
+
+  public async isEngineAvailable(): Promise<boolean> {
+    const status = await this.pythonStatus();
+    const components = status?.components ?? {};
+    return Boolean(components.capture && components.speaker);
+  }
+
+  public async getStatus(): Promise<VoiceStatus> {
     return {
       state: this.state,
       enrolled: this.isEnrolled,
       active: this.isActive,
-      accessKeyConfigured: Boolean(this.accessKey),
-      speakerSimilarityThreshold: this.similarityThreshold
+      speakerSimilarityThreshold: this.similarityThreshold,
+      engineAvailable: await this.isEngineAvailable()
     };
   }
 
-  /**
-   * Generates a 128-dimensional acoustic embedding vector.
-   */
-  private generateAcousticEmbedding(seed: string): number[] {
-    const vector: number[] = [];
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) {
-      hash = (hash << 5) - hash + seed.charCodeAt(i);
-      hash |= 0;
-    }
-    for (let i = 0; i < 128; i++) {
-      const pseudoRandom = Math.sin(hash + i * 997) * 10000;
-      vector.push(pseudoRandom - Math.floor(pseudoRandom));
-    }
-    const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
-    return vector.map((v) => v / (norm || 1));
-  }
-
+  /** Cosine similarity of two equal-length vectors (never uses randomness). */
   public cosineSimilarity(v1: number[], v2: number[]): number {
     if (v1.length !== v2.length || v1.length === 0) return 0;
     let dot = 0;
@@ -199,153 +145,219 @@ class VoiceService extends EventEmitter {
       mag1 += v1[i] * v1[i];
       mag2 += v2[i] * v2[i];
     }
-    const mag = Math.sqrt(mag1) * Math.sqrt(mag2);
-    return mag ? dot / mag : 0;
+    return mag1 === 0 || mag2 === 0 ? 0 : dot / (Math.sqrt(mag1) * Math.sqrt(mag2));
+  }
+
+  private progress(
+    onProgress: ((p: VoiceEnrollmentProgress) => void) | undefined,
+    update: VoiceEnrollmentProgress
+  ): void {
+    if (onProgress) onProgress(update);
+    this.emit("enroll-progress", update);
   }
 
   /**
-   * Eagle speaker enrollment — captures 8 samples, computes embeddings,
-   * persists the averaged voiceprint.
+   * Enroll the speaker. Every sample is a real recording processed by the Python
+   * speaker model; the averaged, L2-normalised embedding is persisted in SQLite.
+   * If any sample cannot be produced the enrollment fails and nothing is stored.
    */
-  public async enroll(onProgress?: (progress: VoiceEnrollmentProgress) => void): Promise<boolean> {
+  public async enroll(onProgress?: (p: VoiceEnrollmentProgress) => void): Promise<boolean> {
     this.setState("enrolling");
-    const totalSamples = 8;
-    const sampleVectors: number[][] = [];
+    const vectors: number[][] = [];
 
-    for (let sample = 1; sample <= totalSamples; sample++) {
-      const progress: VoiceEnrollmentProgress = {
+    for (let sample = 1; sample <= ENROLL_SAMPLES; sample++) {
+      this.progress(onProgress, {
         currentSample: sample,
-        totalSamples,
+        totalSamples: ENROLL_SAMPLES,
         status: "capturing",
-        message: `Speak phrase sample ${sample} of ${totalSamples}: "Hey SPRYGEN"`
-      };
-      if (onProgress) onProgress(progress);
-      this.emit("enroll-progress", progress);
+        message: `Speak the enrollment phrase — sample ${sample} of ${ENROLL_SAMPLES}`
+      });
 
-      await new Promise((resolve) => setTimeout(resolve, 350));
-      const vector = this.generateAcousticEmbedding(`user-sample-${sample}-${Date.now()}`);
-      sampleVectors.push(vector);
-    }
+      const res = await proxyToPython<{ ok?: boolean; embedding?: number[]; code?: string; message?: string }>(
+        "/api/voice/sample",
+        { method: "POST", body: JSON.stringify({ seconds: 3 }) },
+        30_000
+      );
+      const embedding = res.ok ? res.data?.embedding : undefined;
 
-    const combinedEmbedding = new Array(128).fill(0);
-    for (const vec of sampleVectors) {
-      for (let i = 0; i < 128; i++) {
-        combinedEmbedding[i] += vec[i] / totalSamples;
+      if (!res.ok || !res.data?.ok || !Array.isArray(embedding) || embedding.length === 0) {
+        const message = res.ok
+          ? res.data?.message ?? "The local speaker model is unavailable."
+          : res.message;
+        this.progress(onProgress, {
+          currentSample: sample,
+          totalSamples: ENROLL_SAMPLES,
+          status: "failed",
+          message
+        });
+        this.setState("idle");
+        return false;
       }
+      vectors.push(embedding.map(Number));
     }
-    const norm = Math.sqrt(combinedEmbedding.reduce((sum: number, val: number) => sum + val * val, 0));
-    const normalizedVoiceprint = combinedEmbedding.map((v: number) => v / (norm || 1));
+
+    const dimension = vectors[0].length;
+    const combined = new Array<number>(dimension).fill(0);
+    for (const vector of vectors) {
+      for (let i = 0; i < dimension; i++) combined[i] += vector[i] / ENROLL_SAMPLES;
+    }
+    const norm = Math.sqrt(combined.reduce((sum, value) => sum + value * value, 0));
+    const embedding = norm > 0 ? combined.map((value) => value / norm) : combined;
 
     const voiceprint: Voiceprint = {
       id: dbLayer.genId(),
-      embedding: normalizedVoiceprint,
+      embedding,
       enrolledAt: Date.now(),
-      sampleCount: totalSamples
+      sampleCount: ENROLL_SAMPLES
     };
-
     dbLayer.upsert("profile", {
       id: "voiceprint",
       key: "voiceprint",
       value: JSON.stringify(voiceprint)
     });
-
     profileService.set({ voiceprintEnrolled: true });
     this.activeVoiceprint = voiceprint;
     this.isEnrolled = true;
 
-    const completedProgress: VoiceEnrollmentProgress = {
-      currentSample: totalSamples,
-      totalSamples,
+    this.progress(onProgress, {
+      currentSample: ENROLL_SAMPLES,
+      totalSamples: ENROLL_SAMPLES,
       status: "completed",
-      message: "Speaker voiceprint successfully enrolled and voice-locked."
-    };
-    if (onProgress) onProgress(completedProgress);
-    this.emit("enroll-progress", completedProgress);
+      message: "Speaker voiceprint enrolled and voice-locked."
+    });
     this.setState("idle");
-    log.info("Enrollment complete — voiceprint saved.");
+    log.info("Voiceprint enrolled.");
     return true;
   }
 
-  public verifySpeaker(incomingAudioSeed = "speaker-sample"): { verified: boolean; score: number } {
+  /**
+   * Verify the current speaker against the enrolled voiceprint.
+   * Fails closed: not enrolled, or the engine is unavailable, yields `false`.
+   */
+  public async verifySpeaker(): Promise<{ verified: boolean; score: number; reason?: string }> {
     if (!this.isEnrolled || !this.activeVoiceprint) {
-      return { verified: true, score: 1.0 };
+      return { verified: false, score: 0, reason: "not_enrolled" };
     }
-    const incomingEmbedding = this.generateAcousticEmbedding(incomingAudioSeed);
-    const similarity = 0.85 + (Math.random() * 0.1 - 0.05);
-    const verified = similarity >= this.similarityThreshold;
-    return { verified, score: similarity };
+    const res = await proxyToPython<{
+      ok?: boolean;
+      verified?: boolean;
+      score?: number;
+      code?: string;
+      message?: string;
+    }>(
+      "/api/voice/verify",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reference: this.activeVoiceprint.embedding,
+          seconds: 3,
+          threshold: this.similarityThreshold
+        })
+      },
+      30_000
+    );
+    if (!res.ok) return { verified: false, score: 0, reason: res.code };
+    if (!res.data?.ok) return { verified: false, score: 0, reason: res.data?.code ?? "unavailable" };
+    return {
+      verified: res.data.verified === true,
+      score: typeof res.data.score === "number" ? res.data.score : 0
+    };
   }
 
-  /**
-   * Starts the persistent Porcupine wake-word listening loop.
-   * The recorder and engines live in the main process — safe across reloads.
-   */
+  /** Start the continuous wake-word loop inside the Python voice engine. */
   public async start(): Promise<{ ok: boolean; error?: VoiceErrorPayload }> {
     if (this.isActive) return { ok: true };
+    const reference = this.activeVoiceprint?.embedding ?? [];
+    const res = await proxyToPython<{ ok?: boolean; code?: string; message?: string }>(
+      "/api/voice/start",
+      { method: "POST", body: JSON.stringify({ reference, threshold: this.similarityThreshold }) },
+      15_000
+    );
+
+    if (!res.ok || !res.data?.ok) {
+      const message = res.ok ? res.data?.message ?? VoiceErrorMsg.ENGINE_FAILURE : res.message;
+      const error: VoiceErrorPayload = { code: "ENGINE_FAILURE", message };
+      this.setState("disabled");
+      this.emit("voice-error", error);
+      log.warn("Python voice engine did not start", message);
+      return { ok: false, error };
+    }
+
     this.isActive = true;
     this.setState("idle");
-
-    const recorderStarted = this.recorder.start();
-    if (!recorderStarted) {
-      this.isActive = false;
-      const err: VoiceErrorPayload = { code: "ENGINE_FAILURE", message: VoiceErrorMsg.ENGINE_FAILURE };
-      log.error("Recorder start failed", err);
-      this.emit("voice-error", err);
-      return { ok: false, error: err };
-    }
-
-    if (!this.accessKey) {
-      const err: VoiceErrorPayload = {
-        code: "ENGINE_FAILURE",
-        message: "Picovoice access key is missing. Add PICOVOICE_ACCESS_KEY to .env."
-      };
-      log.warn("No Picovoice access key configured — running metering only.");
-      // Non-fatal: still emit audio levels so the HUD responds.
-      this.emit("voice-error", { ...err, recovered: true });
-    }
-
-    // Continuous metering loop — the ONLY producer of live audio level.
-    this.simulatedListeningTimer = setInterval(() => {
-      if (this.state === "idle" && this.isActive) {
-        if (this.recorder.isActive()) {
-          const audioLevel = Math.max(0.05, Math.sin(Date.now() / 300) * 0.2 + 0.1);
-          this.emit("audio-level", audioLevel);
-          this.recorder.ping();
-        }
-      }
-    }, 150);
-
-    log.info("Wake-word engine armed — listening for 'Hey SPRYGEN'.");
+    this.startEventPolling();
+    log.info("Wake-word loop started in the Python voice engine.");
     return { ok: true };
   }
 
   public async stop(): Promise<{ ok: boolean }> {
+    this.stopEventPolling();
     this.isActive = false;
-    this.recorder.stop();
-    if (this.simulatedListeningTimer) {
-      clearInterval(this.simulatedListeningTimer);
-      this.simulatedListeningTimer = null;
-    }
-    if (this.wakeWordTimer) {
-      clearTimeout(this.wakeWordTimer);
-      this.wakeWordTimer = null;
-    }
+    await proxyToPython("/api/voice/stop", { method: "POST" }, 5000);
     this.setState("disabled");
-    log.info("Wake-word engine disarmed.");
+    log.info("Wake-word loop stopped.");
     return { ok: true };
   }
 
+  private startEventPolling(): void {
+    if (this.eventPollTimer) return;
+    this.eventPollTimer = setInterval(() => {
+      void this.pollEvents();
+    }, EVENT_POLL_MS);
+  }
+
+  private stopEventPolling(): void {
+    if (this.eventPollTimer) {
+      clearInterval(this.eventPollTimer);
+      this.eventPollTimer = null;
+    }
+  }
+
+  private async pollEvents(): Promise<void> {
+    const res = await proxyToPython<{ ok?: boolean; events?: PythonEvent[] }>(
+      "/api/voice/events",
+      {},
+      4000
+    );
+    if (!res.ok || !Array.isArray(res.data?.events)) return;
+    for (const event of res.data.events) this.handleEvent(event);
+  }
+
+  private handleEvent(event: PythonEvent): void {
+    const type = String(event.type ?? "");
+    if (type === "audio-level") {
+      this.emit("audio-level", Number(event.level) || 0);
+    } else if (type === "wake") {
+      this.setState("listening");
+      this.emit("wake");
+    } else if (type === "denied") {
+      this.setState("idle");
+      this.emit("unauthorized-voice", Number(event.score) || 0);
+    } else if (type === "transcript") {
+      this.setState("processing");
+      this.emit("transcript", String(event.text ?? ""));
+      setTimeout(() => {
+        if (this.isActive) this.setState("idle");
+      }, 1200);
+    } else if (type === "error") {
+      log.warn("Voice engine reported an error", event.message);
+      this.emit("voice-error", {
+        code: "ENGINE_FAILURE",
+        message: String(event.message ?? "voice engine error"),
+        recovered: true
+      });
+    }
+  }
+
   /**
-   * Trigger a wake-phrase activation path.
+   * Manually trigger the wake path (used by the HUD). Speaker verification and
+   * transcription are both performed by the Python engine and fail closed.
    */
   public async triggerWake(commandText?: string): Promise<{ authorized: boolean; text?: string }> {
     this.setState("listening");
     this.emit("wake");
 
-    await new Promise((r) => setTimeout(r, 400));
-    this.setState("verifying");
-
-    const verification = this.verifySpeaker("current-session-audio");
+    const verification = await this.verifySpeaker();
     if (!verification.verified) {
       this.setState("idle");
       this.emit("unauthorized-voice", verification.score);
@@ -353,104 +365,84 @@ class VoiceService extends EventEmitter {
     }
 
     this.setState("processing");
-    const text = commandText ?? "What's on my schedule today?";
-    this.emit("transcript", text);
-
-    setTimeout(() => {
-      this.setState("idle");
-    }, 1200);
-
+    let text = commandText;
+    if (!text) {
+      const res = await proxyToPython<{ ok?: boolean; text?: string }>(
+        "/api/voice/transcribe",
+        { method: "POST", body: JSON.stringify({ seconds: 5 }) },
+        30_000
+      );
+      text = res.ok && res.data?.ok ? res.data.text ?? "" : "";
+    }
+    if (text) this.emit("transcript", text);
+    setTimeout(() => this.setState("idle"), 1200);
     return { authorized: true, text };
   }
 
   /**
-   * Native Text-to-Speech execution.
-   * Primary provider: ElevenLabs (ELEVENLABS_API_KEY). Falls back to the OS
-   * synthesizer when the key is absent, the request fails, or playback breaks.
+   * Speak ``text``. Speech is synthesised locally by the Python engine (Kokoro);
+   * if that is unavailable we fall back to the OS synthesizer. No network TTS.
    */
   public async speak(text: string): Promise<boolean> {
     if (!text || !text.trim()) return false;
     this.setState("speaking");
     this.emit("speak-start", text);
 
-    const audioPath = await this._elevenLabsSpeak(text);
-    if (audioPath) {
-      const played = await this._playAudioFile(audioPath);
-      this.setState("idle");
-      this.emit("speak-end", text);
-      return played;
+    const spoke = await this._pythonSpeak(text);
+    if (!spoke) await this._nativeSpeak(text);
+
+    this.setState("idle");
+    this.emit("speak-end", text);
+    return true;
+  }
+
+  private async _pythonSpeak(text: string): Promise<boolean> {
+    const res = await proxyToPython<{ ok?: boolean; audioBase64?: string }>(
+      "/api/voice/tts",
+      { method: "POST", body: JSON.stringify({ text }) },
+      30_000
+    );
+    if (!res.ok || !res.data?.ok || typeof res.data.audioBase64 !== "string") return false;
+
+    const filePath = path.join(os.tmpdir(), `sprygen-tts-${Date.now()}.wav`);
+    try {
+      await writeFile(filePath, Buffer.from(res.data.audioBase64, "base64"));
+      await this._playAudioFile(filePath);
+      return true;
+    } catch (err) {
+      log.warn("Local TTS playback failed; falling back to the OS voice", err);
+      unlink(filePath).catch(() => undefined);
+      return false;
     }
+  }
 
+  private _nativeSpeak(text: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const cleanText = text.replace(/["`$\\]/g, " ").slice(0, 300);
+      const clean = text.replace(/["`$\\]/g, " ").slice(0, 300);
       const platform = os.platform();
-
-      let cmd = "";
+      let cmd: string;
       if (platform === "win32") {
-        cmd = `powershell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('${cleanText}')"`;
+        cmd = `powershell -Command "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('${clean}')"`;
       } else if (platform === "darwin") {
-        cmd = `say "${cleanText}"`;
+        cmd = `say "${clean}"`;
       } else {
-        cmd = `espeak "${cleanText}" 2>/dev/null || true`;
+        cmd = `espeak "${clean}" 2>/dev/null || true`;
       }
-
-      exec(cmd, { timeout: 10000 }, () => {
-        this.setState("idle");
-        this.emit("speak-end", text);
-        resolve(true);
-      });
+      exec(cmd, { timeout: 10000 }, () => resolve(true));
     });
   }
 
-  /**
-   * Synthesizes speech via the ElevenLabs TTS API and returns a temp audio path.
-   * Returns null (caller falls back to native TTS) when unconfigured or on error.
-   */
-  private async _elevenLabsSpeak(text: string): Promise<string | null> {
-    const apiKey = process.env.ELEVENLABS_API_KEY || process.env.XI_API_KEY;
-    if (!apiKey) return null;
-    const voiceId = process.env.ELEVENLABS_VOICE_ID || "pNInz6obpgDQGcFmaJgB"; // Rachel
-    try {
-      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          text: text.slice(0, 2000),
-          model_id: "eleven_multilingual_v2",
-          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0 }
-        })
-      });
-      if (!res.ok) {
-        log.warn(`ElevenLabs TTS returned ${res.status} — falling back to native TTS`);
-        return null;
-      }
-      const audio = Buffer.from(await res.arrayBuffer());
-      const filePath = path.join(os.tmpdir(), `sprygen-tts-${Date.now()}.mp3`);
-      await writeFile(filePath, audio);
-      log.info(`ElevenLabs TTS rendered ${audio.length} bytes → ${filePath}`);
-      return filePath;
-    } catch (err) {
-      log.warn("ElevenLabs TTS failed — falling back to native TTS", err);
-      return null;
-    }
-  }
-
-  /**
-   * Best-effort cross-platform MP3 playback. Blocks until playback completes.
-   */
   private _playAudioFile(filePath: string): Promise<boolean> {
     return new Promise((resolve) => {
       const platform = os.platform();
-      let cmd = "";
+      let cmd: string;
       if (platform === "win32") {
-        cmd = `powershell -Command "Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class Mci { [System.Runtime.InteropServices.DllImport(\"winmm.dll\")] public static extern int mciSendString(string c, string r, int l, int h); }'; [Mci]::mciSendString('open \\"${filePath}\\" type mpegvideo alias sytts', $null, 0, 0); [Mci]::mciSendString('play sytts wait', $null, 0, 0) | Out-Null; [Mci]::mciSendString('close sytts', $null, 0, 0)"`;
+        const escaped = filePath.replace(/'/g, "''");
+        cmd = `powershell -Command "(New-Object Media.SoundPlayer '${escaped}').PlaySync()"`;
       } else if (platform === "darwin") {
         cmd = `afplay "${filePath}"`;
       } else {
-        cmd = `mpg123 "${filePath}" 2>/dev/null || ffplay -nodisp -autoexit "${filePath}" 2>/dev/null || true`;
+        cmd = `aplay "${filePath}" 2>/dev/null || paplay "${filePath}" 2>/dev/null || true`;
       }
       exec(cmd, { timeout: 20000 }, () => {
         unlink(filePath).catch(() => undefined);
