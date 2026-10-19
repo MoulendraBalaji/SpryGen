@@ -1,28 +1,43 @@
 import { dbLayer } from "./db";
 import { vectorStore } from "./vectorStore";
 import { profileService } from "./profileService";
+import { uiAutomation } from "./uiAutomation";
+import { screenContext } from "./screenContext";
 import { ProposedAction } from "../../shared/types";
 import * as chrono from "chrono-node";
 
 /**
- * The single place where backend-proposed actions are turned into state changes.
- * Each action is applied exactly once so the Electron SQLite store is the only
- * writer. Actions are keyed by the backend's tool names.
+ * The single place where backend-proposed actions become state changes, so the
+ * Electron SQLite store is the only writer. Side-effecting actions proposed by
+ * the LLM carry ``requiresConfirmation: true`` and are not applied until the
+ * caller approves them.
  */
 
-export interface ActionOutcome {
-  applied: string[];
-  errors: string[];
-  /** True when task rows changed and the renderer should refresh the board. */
-  tasksChanged: boolean;
-}
+const SIDE_EFFECTING = new Set([
+  "task.create",
+  "task.complete",
+  "task.remove",
+  "memory.store",
+  "automation.openApp",
+  "scrape_url",
+  "screen.describe"
+]);
 
 const ACTION_ALIASES: Record<string, string> = {
   create_task: "task.create",
-  task_create: "task.create",
   remember: "memory.store",
-  memory_store: "memory.store"
+  open_app: "automation.openApp",
+  list_tasks: "task.list",
+  recall: "memory.recall"
 };
+
+export interface ActionOutcome {
+  applied: string[];
+  pending: ProposedAction[];
+  errors: string[];
+  notes: string[];
+  tasksChanged: boolean;
+}
 
 function normalize(type: string): string {
   return ACTION_ALIASES[type] ?? type;
@@ -38,14 +53,45 @@ function parseDueAt(value: unknown): number | null {
   return parsed ? parsed.getTime() : null;
 }
 
-export function applyActions(actions: ProposedAction[] | undefined | null): ActionOutcome {
-  const outcome: ActionOutcome = { applied: [], errors: [], tasksChanged: false };
+export function describeAction(action: ProposedAction): string {
+  const type = normalize(action.type);
+  const payload = (action.payload ?? {}) as Record<string, unknown>;
+  switch (type) {
+    case "task.create":
+      return `Create task: "${payload.title ?? ""}"`;
+    case "memory.store":
+      return `Remember: "${payload.value ?? ""}"`;
+    case "automation.openApp":
+      return `Open application: "${payload.target ?? ""}"`;
+    case "scrape_url":
+      return `Fetch web page: ${payload.url ?? ""}`;
+    case "screen.describe":
+      return "Capture and describe the current screen";
+    default:
+      return `${type}`;
+  }
+}
+
+export async function applyActions(
+  actions: ProposedAction[] | undefined | null,
+  opts: { allowSideEffects?: boolean } = {}
+): Promise<ActionOutcome> {
+  const outcome: ActionOutcome = { applied: [], pending: [], errors: [], notes: [], tasksChanged: false };
   if (!Array.isArray(actions)) return outcome;
 
   for (const action of actions) {
     if (!action || typeof action.type !== "string") continue;
     const type = normalize(action.type);
     const payload = (action.payload ?? {}) as Record<string, unknown>;
+
+    // Read-only tool calls are resolved in the backend; nothing to apply here.
+    if (!SIDE_EFFECTING.has(type)) continue;
+
+    if (action.requiresConfirmation && !opts.allowSideEffects) {
+      outcome.pending.push(action);
+      continue;
+    }
+
     try {
       switch (type) {
         case "task.create": {
@@ -89,21 +135,35 @@ export function applyActions(actions: ProposedAction[] | undefined | null): Acti
           break;
         }
         case "memory.store": {
-          const value = String(payload.value ?? payload.text ?? "").trim();
-          const key = String(payload.key ?? "").trim();
+          const value = String(payload.value ?? "").trim();
           if (!value) {
             outcome.errors.push("memory.store: missing value");
             break;
           }
-          void vectorStore.add(value);
-          profileService.addFact(key || `fact_${Date.now()}`, value);
+          await vectorStore.add(value);
+          profileService.addFact(String(payload.key ?? value.slice(0, 80)), value);
           outcome.applied.push("memory.store");
           break;
         }
-        // Read-only / not-yet-implemented actions are ignored here; they are
-        // surfaced to the renderer through the chat response itself.
+        case "automation.openApp": {
+          const target = String(payload.target ?? "");
+          const result = uiAutomation.open(target);
+          if (result.ok) {
+            outcome.applied.push("automation.openApp");
+            outcome.notes.push(`Opened ${target}.`);
+          } else {
+            outcome.errors.push(result.reason ?? `Could not open ${target}`);
+          }
+          break;
+        }
+        case "screen.describe": {
+          const description = await screenContext.describe(String(payload.prompt ?? "Describe the screen."));
+          outcome.applied.push("screen.describe");
+          outcome.notes.push(description);
+          break;
+        }
         default:
-          outcome.applied.push(type);
+          outcome.errors.push(`${type}: not supported`);
       }
     } catch (err) {
       outcome.errors.push(`${type}: ${err instanceof Error ? err.message : String(err)}`);

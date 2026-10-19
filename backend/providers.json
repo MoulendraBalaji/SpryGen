@@ -1,0 +1,45 @@
+{
+  "//": "Editable without a code change. Model names and base URLs change often — verify current limits/names in each provider's console. Free-tier providers: groq, cerebras, openrouter (use :free models), mistral. ollama is local and always available if the daemon is running.",
+  "providers": {
+    "groq": {
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiKeyEnv": "GROQ_API_KEY",
+      "chatModel": "llama-3.3-70b-versatile",
+      "toolsModel": "llama-3.3-70b-versatile",
+      "supportsTools": true,
+      "cloud": true
+    },
+    "cerebras": {
+      "baseUrl": "https://api.cerebras.ai/v1",
+      "apiKeyEnv": "CEREBRAS_API_KEY",
+      "chatModel": "llama3.1-8b",
+      "toolsModel": "llama3.1-8b",
+      "supportsTools": true,
+      "cloud": true
+    },
+    "openrouter": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "chatModel": "meta-llama/llama-3.3-70b-instruct:free",
+      "toolsModel": "meta-llama/llama-3.3-70b-instruct:free",
+      "supportsTools": true,
+      "cloud": true
+    },
+    "mistral": {
+      "baseUrl": "https://api.mistral.ai/v1",
+      "apiKeyEnv": "MISTRAL_API_KEY",
+      "chatModel": "mistral-small-latest",
+      "toolsModel": "mistral-small-latest",
+      "supportsTools": true,
+      "cloud": true
+    },
+    "ollama": {
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "apiKeyEnv": "",
+      "chatModel": "llama3.2",
+      "toolsModel": "llama3.2",
+      "supportsTools": true,
+      "cloud": false
+    }
+  }
+}

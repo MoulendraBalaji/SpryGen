@@ -48,6 +48,8 @@ export interface ChatMessage {
 export interface ProposedAction {
   type: string;
   payload?: Record<string, unknown>;
+  /** When true the action must be confirmed by the user before it is applied. */
+  requiresConfirmation?: boolean;
 }
 
 export interface IntentResult {

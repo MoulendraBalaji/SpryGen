@@ -1,20 +1,18 @@
-import { ipcMain, BrowserWindow, Notification } from "electron";
+import { ipcMain, BrowserWindow, Notification, dialog } from "electron";
 import { dbLayer } from "../services/db";
 import { healthMonitor } from "../services/healthMonitor";
-import { router } from "../services/router";
-import { applyActions } from "../services/actions";
+import { applyActions, describeAction } from "../services/actions";
 import { profileService } from "../services/profileService";
-import type { IntentResult, ProposedAction } from "../../shared/types";
+import type { IntentResult } from "../../shared/types";
 import { whatsappWebAdapter } from "../services/adapters/whatsappWebAdapter";
 import { notifMirrorAdapter } from "../services/adapters/notifMirrorAdapter";
 import { manualCaptureAdapter } from "../services/adapters/manualCaptureAdapter";
 import { voice } from "../services/voice/voice";
 import { overlay } from "../services/overlay";
 import { screenContext } from "../services/screenContext";
-import { uiAutomation } from "../services/uiAutomation";
 import { vectorStore } from "../services/vectorStore";
 import { deviceSync } from "../services/deviceSync";
-import type { AdapterState, OverlayMode } from "../../shared/types";
+import type { AdapterState, OverlayMode, ProposedAction } from "../../shared/types";
 
 const PYTHON_BACKEND_URL = "http://127.0.0.1:8766";
 
@@ -43,6 +41,24 @@ function pushEvent(channel: string, ...args: unknown[]) {
       w.webContents.send(channel, ...args);
     }
   });
+}
+
+/** Ask the user to approve side-effecting actions before they are applied. */
+export async function confirmActions(actions: ProposedAction[]): Promise<boolean> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  if (!win || actions.length === 0) return false;
+  const detail = actions.map((a) => `• ${describeAction(a)}`).join("\n");
+  const res = await dialog.showMessageBox(win, {
+    type: "question",
+    buttons: ["Apply", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: "Confirm action",
+    message: "SPRYGEN wants to perform an action that changes your system:",
+    detail
+  });
+  return res.response === 0;
 }
 
 export function registerIpc() {
@@ -132,6 +148,7 @@ export function registerIpc() {
     const facts = (profile.learnedFacts || []).map((f) => ({ key: f.key, value: f.value }));
 
     let result: IntentResult;
+    let outcome = { applied: [] as string[], pending: [] as ProposedAction[], errors: [] as string[], notes: [] as string[], tasksChanged: false };
 
     const pyResult = await proxyToPython("/api/chat", {
       method: "POST",
@@ -147,26 +164,33 @@ export function registerIpc() {
         provider: pyResult.provider,
         actions: pyResult.actions ?? []
       };
-      const outcome = applyActions(result.actions);
-      if (outcome.tasksChanged) pushEvent("tasks:update");
+      outcome = await applyActions(result.actions);
     } else {
-      // Fallback to the local TypeScript router when the Python backend is down.
-      result = await router.route({ text, profile, history: history as any });
-      const bridged: ProposedAction[] = [];
-      if (result.intent === "task.create" && result.params.title) {
-        bridged.push({
-          type: "task.create",
-          payload: { title: result.params.title, dueAt: result.params.dueAt }
-        });
-      }
-      const outcome = applyActions(bridged);
-      if (outcome.tasksChanged) pushEvent("tasks:update");
+      // The Python backend owns routing/providers now. Surface the failure
+      // instead of silently answering from stale local heuristics.
+      result = {
+        intent: "error",
+        params: {},
+        routedTo: "python",
+        answer: "The local backend isn't reachable yet. It is starting up — please retry in a moment.",
+        actions: []
+      };
     }
 
-    if (result.intent === "automation.openApp" && result.params.target) {
-      const r = uiAutomation.open(String(result.params.target));
-      if (!r.ok) result.answer = r.reason ?? result.answer;
+    // Side-effecting tool calls need explicit confirmation.
+    if (outcome.pending.length && (await confirmActions(outcome.pending))) {
+      const approved = await applyActions(outcome.pending, { allowSideEffects: true });
+      outcome = {
+        applied: [...outcome.applied, ...approved.applied],
+        pending: [],
+        errors: [...outcome.errors, ...approved.errors],
+        notes: [...outcome.notes, ...approved.notes],
+        tasksChanged: outcome.tasksChanged || approved.tasksChanged
+      };
     }
+
+    if (outcome.notes.length) result.answer = [result.answer, ...outcome.notes].filter(Boolean).join("\n");
+    if (outcome.tasksChanged) pushEvent("tasks:update");
 
     // Electron is the only datastore: persist the exchange exactly once.
     dbLayer.insert("chat", { id: dbLayer.genId(), role: "user", text, intent: result.intent, createdAt: Date.now() });
