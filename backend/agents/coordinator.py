@@ -18,33 +18,30 @@ class CoordinatorAgent(BaseAgent):
         self.on("route", self._handle_route)
         self.on("list_agents", self._handle_list_agents)
 
-    async def _handle_route(self, msg: AgentMessage) -> AgentResponse:
-        target = msg.payload.get("target_agent", "")
-        if target and target in self._agent_registry:
-            agent = self._agent_registry[target]
-            inner = AgentMessage(
-                sender=msg.sender,
-                recipient=target,
-                action=msg.payload.get("action", "handle"),
-                payload=msg.payload.get("payload", {}),
-            )
-            return await agent.handle(inner)
+    def _request_context(self, msg: AgentMessage) -> dict[str, Any]:
+        """Context every stateless agent needs to answer without a database."""
+        payload = msg.payload
+        return {
+            "text": payload.get("text", ""),
+            "intent": payload.get("intent", ""),
+            "params": payload.get("params", {}),
+            "history": payload.get("history", []),
+            "profile": payload.get("profile", {}),
+            "tasks": payload.get("tasks", []),
+            "assignments": payload.get("assignments", []),
+            "facts": payload.get("facts", []),
+        }
 
-        intent = msg.payload.get("intent", "")
-        mapped = self._map_intent(intent)
+    async def _handle_route(self, msg: AgentMessage) -> AgentResponse:
+        target = msg.payload.get("target_agent")
+        mapped = target or self._map_intent(msg.payload.get("intent", ""))
         if mapped and mapped in self._agent_registry:
             agent = self._agent_registry[mapped]
             inner = AgentMessage(
                 sender=msg.sender,
                 recipient=mapped,
                 action="handle",
-                payload={
-                    "text": msg.payload.get("text", ""),
-                    "intent": intent,
-                    "params": msg.payload.get("params", {}),
-                    "history": msg.payload.get("history", []),
-                    "profile": msg.payload.get("profile", {}),
-                },
+                payload=self._request_context(msg),
             )
             return await agent.handle(inner)
 
@@ -52,7 +49,7 @@ class CoordinatorAgent(BaseAgent):
             source=self.name,
             action="route",
             success=False,
-            error=f"No agent found for intent: {intent}",
+            error=f"No agent found for intent: {msg.payload.get('intent', '')}",
         )
 
     async def _handle_list_agents(self, msg: AgentMessage) -> AgentResponse:

@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { ChildProcess, spawn } from "node:child_process";
 import { registerIpc } from "./ipc";
+import { initDb } from "./services/db";
 import { healthMonitor } from "./services/healthMonitor";
 import { startReminders } from "./services/scheduler";
 import { deviceSync } from "./services/deviceSync";
@@ -317,6 +318,7 @@ function registerGlobalHotkeys(): void {
 
 app.whenReady().then(async () => {
   loadEnvFile();
+  await initDb();
   startPythonBackend();
   const { notify } = registerIpc();
   mainWindow = createWindow();

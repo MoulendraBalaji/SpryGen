@@ -5,12 +5,11 @@ import time
 from typing import Any
 import httpx
 from .base import BaseAgent, AgentMessage, AgentResponse
-from ..config import OLLAMA_URL, GEMINI_API_KEY, GROQ_API_KEY
+from ..config import OLLAMA_URL, GROQ_API_KEY
 from ..services.automation import automation
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 MAX_SCRAPED_CHARS = 8000
 
 
@@ -47,8 +46,6 @@ class ChatAgent(BaseAgent):
             })
 
         answer = await self._try_groq(messages)
-        if answer is None and GEMINI_API_KEY:
-            answer = await self._try_gemini(messages)
         if answer is None:
             answer = await self._try_ollama(messages)
         if answer is None:
@@ -106,43 +103,6 @@ class ChatAgent(BaseAgent):
             pass
         return None
 
-    async def _try_gemini(self, messages: list[dict]) -> str | None:
-        if not GEMINI_API_KEY:
-            return None
-        system_prompt = ""
-        contents: list[dict] = []
-        for m in messages:
-            role = m.get("role", "user")
-            content = m.get("content", "")
-            if role == "system":
-                system_prompt = content
-            elif role == "user":
-                contents.append({"role": "user", "parts": [{"text": content}]})
-            else:
-                contents.append({"role": "model", "parts": [{"text": content}]})
-        if not contents:
-            return None
-        body: dict[str, Any] = {"contents": contents}
-        if system_prompt:
-            body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-        try:
-            async with httpx.AsyncClient(timeout=45) as client:
-                resp = await client.post(
-                    f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-                    json={**body, "generationConfig": {"maxOutputTokens": 1600}},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        return "".join(p.get("text", "") for p in parts if p.get("text"))
-                    if data.get("promptFeedback", {}).get("blockReason"):
-                        return "The request was blocked by Google's safety filters."
-        except Exception:
-            pass
-        return None
-
     async def _try_ollama(self, messages: list[dict]) -> str | None:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -181,4 +141,4 @@ class ChatAgent(BaseAgent):
             return f"Today is {time.strftime('%B %d, %Y')}."
         if "thank" in lower:
             return "You're welcome! Let me know if you need anything else."
-        return "I understand. For the best experience, ensure a Groq or Gemini API key is configured."
+        return "I understand. For the best experience, start the local Ollama server or configure a free API key (see .env.example)."

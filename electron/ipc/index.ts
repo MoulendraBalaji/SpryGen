@@ -2,7 +2,9 @@ import { ipcMain, BrowserWindow, Notification } from "electron";
 import { dbLayer } from "../services/db";
 import { healthMonitor } from "../services/healthMonitor";
 import { router } from "../services/router";
+import { applyActions } from "../services/actions";
 import { profileService } from "../services/profileService";
+import type { IntentResult, ProposedAction } from "../../shared/types";
 import { whatsappWebAdapter } from "../services/adapters/whatsappWebAdapter";
 import { notifMirrorAdapter } from "../services/adapters/notifMirrorAdapter";
 import { manualCaptureAdapter } from "../services/adapters/manualCaptureAdapter";
@@ -12,7 +14,7 @@ import { screenContext } from "../services/screenContext";
 import { uiAutomation } from "../services/uiAutomation";
 import { vectorStore } from "../services/vectorStore";
 import { deviceSync } from "../services/deviceSync";
-import { AdapterState, OverlayMode } from "../../shared/types";
+import type { AdapterState, OverlayMode } from "../../shared/types";
 
 const PYTHON_BACKEND_URL = "http://127.0.0.1:8766";
 
@@ -58,21 +60,15 @@ export function registerIpc() {
   });
 
   // Environment & config health row — intended as an in-app notice for unset keys.
-  const ENV_CHECKS: { key: string; alt?: string; label: string }[] = [
-    { key: "GROQ_API_KEY", label: "Groq" },
-    { key: "GEMINI_API_KEY", label: "Gemini" },
-    { key: "ELEVENLABS_API_KEY", label: "ElevenLabs Voice" },
-    { key: "SPRYGEN_OLLAMA_URL", alt: "JARVIS_OLLAMA_URL", label: "Ollama" },
-    { key: "PICOVOICE_ACCESS_KEY", label: "Picovoice" }
-  ];
-  const missingEnv = ENV_CHECKS.filter((c) => !process.env[c.key] && !(c.alt && process.env[c.alt]));
+  const CLOUD_LLM_KEYS = ["GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY"];
+  const cloudConfigured = CLOUD_LLM_KEYS.some((key) => !!process.env[key]);
   healthMonitor.register({
     id: "env",
-    label: "AI Keys & Voice",
-    description: missingEnv.length
-      ? `Not configured: ${missingEnv.map((c) => c.label).join(", ")}. See .env.example for details.`
-      : "All AI service keys and access keys are configured.",
-    status: missingEnv.length ? "degraded" : "healthy",
+    label: "LLM Providers",
+    description: cloudConfigured
+      ? "A cloud LLM key is configured. Prompts may leave this device; personal data stays local."
+      : "No cloud LLM key — running fully local via Ollama.",
+    status: "healthy",
     lastSyncAt: null,
     category: "config"
   });
@@ -125,36 +121,55 @@ export function registerIpc() {
     pushEvent("tasks:update");
   });
 
-  // Chat & Smart Router IPC — proxies to Python multi-agent backend first
-  ipcMain.handle("chat:send", async (_e, text) => {
+  // Chat IPC — sends stateless context to Python; Electron applies the actions once.
+  ipcMain.handle("chat:send", async (_e, text: string) => {
     const profile = profileService.get();
-    const history = (dbLayer.all("chat") as any[]).map((m) => ({
+    const history = (dbLayer.all("chat") as any[]).slice(-20).map((m) => ({
       role: m.role,
       content: m.text
     }));
+    const tasks = dbLayer.all("tasks");
+    const facts = (profile.learnedFacts || []).map((f) => ({ key: f.key, value: f.value }));
 
-    let result: any = null;
+    let result: IntentResult;
 
-    // Try Python multi-agent backend first
     const pyResult = await proxyToPython("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ text, history, profile }),
+      body: JSON.stringify({ text, history, profile, tasks, facts })
     });
 
-    if (pyResult && pyResult.answer) {
-      result = pyResult;
+    if (pyResult && typeof pyResult.answer === "string") {
+      result = {
+        intent: pyResult.intent ?? "chat",
+        params: pyResult.params ?? {},
+        routedTo: "python",
+        answer: pyResult.answer,
+        provider: pyResult.provider,
+        actions: pyResult.actions ?? []
+      };
+      const outcome = applyActions(result.actions);
+      if (outcome.tasksChanged) pushEvent("tasks:update");
     } else {
-      // Fallback to local TypeScript router
-      result = await router.route({ text, profile, history });
+      // Fallback to the local TypeScript router when the Python backend is down.
+      result = await router.route({ text, profile, history: history as any });
+      const bridged: ProposedAction[] = [];
+      if (result.intent === "task.create" && result.params.title) {
+        bridged.push({
+          type: "task.create",
+          payload: { title: result.params.title, dueAt: result.params.dueAt }
+        });
+      }
+      const outcome = applyActions(bridged);
+      if (outcome.tasksChanged) pushEvent("tasks:update");
     }
 
-    dbLayer.insert("chat", {
-      id: dbLayer.genId(),
-      role: "user",
-      text,
-      intent: result.intent,
-      createdAt: Date.now()
-    });
+    if (result.intent === "automation.openApp" && result.params.target) {
+      const r = uiAutomation.open(String(result.params.target));
+      if (!r.ok) result.answer = r.reason ?? result.answer;
+    }
+
+    // Electron is the only datastore: persist the exchange exactly once.
+    dbLayer.insert("chat", { id: dbLayer.genId(), role: "user", text, intent: result.intent, createdAt: Date.now() });
     dbLayer.insert("chat", {
       id: dbLayer.genId(),
       role: "assistant",
@@ -162,25 +177,6 @@ export function registerIpc() {
       intent: result.intent,
       createdAt: Date.now()
     });
-
-    if (result.intent === "task.create" && result.params.title) {
-      dbLayer.insert("tasks", {
-        id: dbLayer.genId(),
-        createdAt: Date.now(),
-        title: String(result.params.title),
-        completed: 0,
-        dueAt: result.params.dueAt ? Number(result.params.dueAt) : null,
-        source: "chat_nlp",
-        recurring: null,
-        tags: "[]"
-      });
-      pushEvent("tasks:update");
-    }
-
-    if (result.intent === "automation.openApp" && result.params.target) {
-      const r = uiAutomation.open(String(result.params.target));
-      if (!r.ok) result.answer = r.reason ?? result.answer;
-    }
 
     pushEvent("chat:update");
     return result;
@@ -206,12 +202,8 @@ export function registerIpc() {
   ipcMain.handle("profile:set", (_e, patch) => profileService.set(patch));
   ipcMain.handle("profile:deleteFact", (_e, key) => profileService.deleteFact(key));
 
-  // Briefing IPC — proxies to Python backend
+  // Briefing IPC — computed from the Electron store, the single source of truth.
   ipcMain.handle("briefing:generate", async () => {
-    const pyResult = await proxyToPython("/api/briefing");
-    if (pyResult && Array.isArray(pyResult)) {
-      return pyResult;
-    }
     const tasks = dbLayer.all("tasks") as any[];
     const assignments = dbLayer.all("assignments") as any[];
     return [

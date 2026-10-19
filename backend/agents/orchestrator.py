@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from .base import AgentMessage, AgentResponse
+from .base import AgentMessage
 from .coordinator import CoordinatorAgent
 from .task_agent import TaskAgent
 from .chat_agent import ChatAgent
@@ -21,7 +21,15 @@ class Orchestrator:
         self.coordinator.register_agent(self.memory_agent)
         self.coordinator.register_agent(self.briefing_agent)
 
-    async def route(self, text: str, history: list[dict] | None = None, profile: dict | None = None) -> dict[str, Any]:
+    async def route(
+        self,
+        text: str,
+        history: list[dict] | None = None,
+        profile: dict | None = None,
+        tasks: list[dict] | None = None,
+        facts: list[dict] | None = None,
+        assignments: list[dict] | None = None,
+    ) -> dict[str, Any]:
         intent = self._classify_intent(text)
         params = self._extract_params(text, intent)
 
@@ -33,40 +41,44 @@ class Orchestrator:
                 "text": text,
                 "intent": intent,
                 "params": params,
-                "history": history or [],
+                "history": (history or [])[-20:],
                 "profile": profile or {},
+                "tasks": tasks or [],
+                "facts": facts or [],
+                "assignments": assignments or [],
             },
         )
         response = await self.coordinator.handle(msg)
+        payload = response.payload or {}
         return {
-            "intent": intent,
+            "intent": payload.get("intent", intent),
             "params": params,
             "routedTo": "python",
-            "answer": response.payload.get("answer", ""),
+            "answer": payload.get("answer", ""),
+            "actions": payload.get("actions", []),
             "success": response.success,
+            "error": response.error,
         }
 
-    async def execute(self, agent_name: str, action: str, payload: dict | None = None) -> AgentResponse:
+    async def execute(self, agent_name: str, action: str, payload: dict | None = None):
         msg = AgentMessage(
-            sender="electron",
-            recipient=agent_name,
-            action=action,
-            payload=payload or {},
-        )
-        route_msg = AgentMessage(
             sender="electron",
             recipient="coordinator",
             action="route",
-            payload={"target_agent": agent_name, "action": action, "payload": payload or {}},
+            payload={
+                "target_agent": agent_name,
+                "text": (payload or {}).get("text", ""),
+                **(payload or {}),
+            },
         )
-        return await self.coordinator.handle(route_msg)
+        return await self.coordinator.handle(msg)
 
     @staticmethod
     def _classify_intent(text: str) -> str:
         lower = text.lower()
-        task_kw = ["task", "todo", "remind", "create", "add", "schedule", "deadline"]
-        memory_kw = ["remember", "recall", "memory", "what do you know"]
-        briefing_kw = ["briefing", "summary", "what's on", "what do i have", "morning"]
+        task_kw = ["remind me", "todo:", "add a task", "create a task", "new task", "task to"]
+        memory_kw = ["remember that", "remember ", "recall", "what do you know"]
+        briefing_kw = ["briefing", "what's on my schedule", "what do i have", "my schedule"]
         if any(k in lower for k in task_kw):
             return "task.create"
         if any(k in lower for k in memory_kw):
@@ -80,7 +92,12 @@ class Orchestrator:
         params: dict = {}
         if intent == "task.create":
             import re
-            m = re.search(r"(?:create|add|make|remind me (?:to)?)\s+(?:a\s+)?(?:task\s+(?:to\s+)?)?(.+)", text, re.IGNORECASE)
-            if m:
-                params["title"] = m.group(1).strip().rstrip(".")
+
+            match = re.search(
+                r"(?:remind me to|create a task to|add a task to|add task|todo:?)\s*(.+)",
+                text,
+                re.IGNORECASE,
+            )
+            if match:
+                params["title"] = match.group(1).strip().rstrip(".")
         return params

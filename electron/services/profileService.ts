@@ -28,6 +28,13 @@ export const profileService = {
     return next;
   },
 
+  addFact(key: string, value: string): UserProfile {
+    const current = this.get();
+    const learnedFacts = current.learnedFacts.filter((f: { key: string }) => f.key !== key);
+    learnedFacts.push({ key, value, updatedAt: Date.now() });
+    return this.set({ learnedFacts });
+  },
+
   deleteFact(key: string): UserProfile {
     const current = this.get();
     current.learnedFacts = current.learnedFacts.filter((f: { key: string }) => f.key !== key);

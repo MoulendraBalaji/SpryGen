@@ -44,12 +44,22 @@ export interface ChatMessage {
   createdAt: number;
 }
 
+/** A side-effecting operation proposed by the backend chat agent. */
+export interface ProposedAction {
+  type: string;
+  payload?: Record<string, unknown>;
+}
+
 export interface IntentResult {
   intent: string;
   params: Record<string, unknown>;
-  routedTo: "local" | "cloud";
+  routedTo: "local" | "cloud" | "python";
   answer: string;
   confidence?: number;
+  /** Which LLM provider produced the answer (e.g. "ollama", "groq"). */
+  provider?: string;
+  /** Proposed side-effecting actions. Applied by the main process. */
+  actions?: ProposedAction[];
 }
 
 export interface UserProfile {

@@ -1,95 +1,92 @@
 from __future__ import annotations
-import uuid
-import time
 import math
+import re
+from typing import Any
 from .base import BaseAgent, AgentMessage, AgentResponse
-from ..db import db
 
 
 class MemoryAgent(BaseAgent):
-    name = "memory"
-    description = "Vector-based memory recall with n-gram embeddings and cosine similarity"
+    """Stateless memory agent.
 
-    def __init__(self) -> None:
-        self._dim = 64
-        super().__init__()
+    It receives known facts in the request payload and either proposes a
+    ``memory.store`` action or answers a recall query by ranking the supplied
+    facts. No database access happens here.
+    """
+
+    name = "memory"
+    _dim = 64
 
     def _register_handlers(self) -> None:
         self.on("handle", self._handle)
-        self.on("store", self._store)
         self.on("recall", self._recall)
 
     async def _handle(self, msg: AgentMessage) -> AgentResponse:
         text = msg.payload.get("text", "")
+        facts = msg.payload.get("facts") or []
         lower = text.lower()
         if "remember" in lower:
-            key = text.split("remember")[-1].strip().split("that")[-1].strip()
-            key = key.rstrip(".")
-            if key:
-                self._save_fact(key, text)
+            value = self._extract_fact(text)
+            if value:
                 return AgentResponse(
                     source=self.name,
                     action="handle",
-                    payload={"intent": "memory.store", "answer": f"Got it! I'll remember: {key}"},
+                    payload={
+                        "intent": "memory.store",
+                        "answer": f"Got it! I'll remember: {value}",
+                        "actions": [
+                            {
+                                "type": "memory.store",
+                                "payload": {"key": value[:80], "value": value},
+                            }
+                        ],
+                    },
                 )
-        return await self._recall_msg(text)
-
-    async def _store(self, msg: AgentMessage) -> AgentResponse:
-        key = msg.payload.get("key", "")
-        value = msg.payload.get("value", "")
-        if key:
-            self._save_fact(key, value)
-        return AgentResponse(source=self.name, action="store", payload={"ok": True})
+        return self._recall_answer(text, facts)
 
     async def _recall(self, msg: AgentMessage) -> AgentResponse:
-        text = msg.payload.get("text", "")
-        return await self._recall_msg(text)
+        return self._recall_answer(msg.payload.get("text", ""), msg.payload.get("facts") or [])
 
-    async def _recall_msg(self, text: str) -> AgentResponse:
-        facts = db.all("facts")
+    def _recall_answer(self, text: str, facts: list[dict[str, Any]]) -> AgentResponse:
         if not facts:
             return AgentResponse(
-                source=self.name, action="recall",
-                payload={"answer": "I don't have any stored memories yet."},
+                source=self.name,
+                action="recall",
+                payload={"intent": "memory.recall", "answer": "I don't have any stored memories yet.", "actions": []},
             )
         query_vec = self._embed(text)
-        scored = []
-        for f in facts:
-            fact_vec = self._embed(f.get("value", f.get("key", "")))
-            sim = self._cosine(query_vec, fact_vec)
-            scored.append((sim, f))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = [f for _, f in scored[:3] if _[0] > 0.3] if scored else []
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for fact in facts:
+            value = str(fact.get("value", fact.get("text", fact.get("key", ""))))
+            scored.append((self._cosine(query_vec, self._embed(value)), fact))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        top = [fact for score, fact in scored[:3] if score > 0.3]
         if not top:
             return AgentResponse(
-                source=self.name, action="recall",
-                payload={"answer": "I don't have anything stored about that yet."},
+                source=self.name,
+                action="recall",
+                payload={"intent": "memory.recall", "answer": "I don't know anything about that yet.", "actions": []},
             )
-        lines = [f"- {f['key']}: {f['value']}" for f in top]
+        lines = [f"\u2022 {f.get('value', f.get('text', ''))}" for f in top]
         return AgentResponse(
-            source=self.name, action="recall",
-            payload={"answer": "Here's what I remember:\n" + "\n".join(lines)},
+            source=self.name,
+            action="recall",
+            payload={
+                "intent": "memory.recall",
+                "answer": "Here is what I remember:\n" + "\n".join(lines),
+                "actions": [],
+            },
         )
 
-    def _save_fact(self, key: str, value: str) -> None:
-        facts = db.all("facts")
-        for f in facts:
-            if f.get("key") == key:
-                db.update("facts", f["id"], {"value": value, "updatedAt": int(time.time() * 1000)})
-                return
-        db.insert("facts", {
-            "id": str(uuid.uuid4()),
-            "key": key,
-            "value": value,
-            "updatedAt": int(time.time() * 1000),
-        })
+    @staticmethod
+    def _extract_fact(text: str) -> str:
+        cleaned = re.sub(r"(?i)^.*?\bremember\s+(?:that\s+)?", "", text).strip()
+        return cleaned.rstrip(".")
 
     def _embed(self, text: str) -> list[float]:
         vec = [0.0] * self._dim
-        words = text.lower().split()
-        for w in words:
-            for i in range(0, min(len(w), 12)):
-                idx = (ord(w[i]) * 31 + i * 17) % self._dim
+        for word in text.lower().split():
+            for i in range(0, min(len(word), 12)):
+                idx = (ord(word[i]) * 31 + i * 17) % self._dim
                 vec[idx] += 1.0
         norm = math.sqrt(sum(v * v for v in vec)) or 1.0
         return [v / norm for v in vec]
