@@ -12,22 +12,8 @@ import { overlay } from "../services/overlay";
 import { screenContext } from "../services/screenContext";
 import { vectorStore } from "../services/vectorStore";
 import { deviceSync } from "../services/deviceSync";
-import type { AdapterState, OverlayMode, ProposedAction } from "../../shared/types";
-
-const PYTHON_BACKEND_URL = "http://127.0.0.1:8766";
-
-async function proxyToPython(endpoint: string, options?: RequestInit): Promise<any> {
-  try {
-    const resp = await fetch(`${PYTHON_BACKEND_URL}${endpoint}`, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    if (!resp.ok) throw new Error(`Python backend returned ${resp.status}`);
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
+import type { AdapterState, AutomationResult, AutomationStatus, OverlayMode, ProposedAction } from "../../shared/types";
+import { proxyToPython } from "../services/pythonClient";
 
 const adapters = new Map<string, any>([
   ["whatsapp-web", whatsappWebAdapter],
@@ -150,19 +136,26 @@ export function registerIpc() {
     let result: IntentResult;
     let outcome = { applied: [] as string[], pending: [] as ProposedAction[], errors: [] as string[], notes: [] as string[], tasksChanged: false };
 
-    const pyResult = await proxyToPython("/api/chat", {
+    const pyResult = await proxyToPython<{
+      answer?: string;
+      intent?: string;
+      params?: Record<string, unknown>;
+      provider?: string;
+      actions?: ProposedAction[];
+    }>("/api/chat", {
       method: "POST",
       body: JSON.stringify({ text, history, profile, tasks, facts })
     });
 
-    if (pyResult && typeof pyResult.answer === "string") {
+    const py = pyResult.ok ? pyResult.data : undefined;
+    if (py && typeof py.answer === "string") {
       result = {
-        intent: pyResult.intent ?? "chat",
-        params: pyResult.params ?? {},
+        intent: py.intent ?? "chat",
+        params: py.params ?? {},
         routedTo: "python",
-        answer: pyResult.answer,
-        provider: pyResult.provider,
-        actions: pyResult.actions ?? []
+        answer: py.answer,
+        provider: py.provider,
+        actions: py.actions ?? []
       };
       outcome = await applyActions(result.actions);
     } else {
@@ -172,7 +165,9 @@ export function registerIpc() {
         intent: "error",
         params: {},
         routedTo: "python",
-        answer: "The local backend isn't reachable yet. It is starting up — please retry in a moment.",
+        answer: pyResult.ok
+          ? "The local backend returned an unexpected response. Please try again."
+          : `The local backend isn't reachable yet (${pyResult.code}). It may still be starting — please retry in a moment.`,
         actions: []
       };
     }
@@ -277,34 +272,44 @@ export function registerIpc() {
   });
 
   // Automation IPC — Selenium / BeautifulSoup / PyAutoGUI (proxied to Python backend)
+  const backendFailure = (code: string, message: string): AutomationResult => ({
+    ok: false,
+    data: null,
+    logs: [],
+    error: { code, message }
+  });
+
   ipcMain.handle("automation:status", async () => {
-    const res = await proxyToPython("/api/automation/status");
-    return res ?? { active: false, workflow: null, startedAt: null };
+    const res = await proxyToPython<AutomationStatus>("/api/automation/status");
+    return res.ok ? res.data : { active: false, workflow: null, startedAt: null };
   });
   ipcMain.handle("automation:abort", async () => {
-    const res = await proxyToPython("/api/automation/abort", { method: "POST" });
-    return res ?? { ok: false };
+    const res = await proxyToPython<{ ok: boolean }>("/api/automation/abort", { method: "POST" });
+    return res.ok ? res.data : { ok: false };
   });
   ipcMain.handle("automation:web-scrape", async (_e, input) => {
-    const res = await proxyToPython("/api/automation/web-scrape", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
+    const res = await proxyToPython<AutomationResult>(
+      "/api/automation/web-scrape",
+      { method: "POST", body: JSON.stringify(input) },
+      120_000
+    );
+    return res.ok ? res.data : backendFailure(res.code, res.message);
   });
   ipcMain.handle("automation:browser-task", async (_e, input) => {
-    const res = await proxyToPython("/api/automation/browser-task", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
+    const res = await proxyToPython<AutomationResult>(
+      "/api/automation/browser-task",
+      { method: "POST", body: JSON.stringify(input) },
+      120_000
+    );
+    return res.ok ? res.data : backendFailure(res.code, res.message);
   });
   ipcMain.handle("automation:desktop-action", async (_e, input) => {
-    const res = await proxyToPython("/api/automation/desktop-action", {
-      method: "POST",
-      body: JSON.stringify(input)
-    });
-    return res ?? { ok: false, data: null, logs: [], error: { code: "BACKEND_DOWN", message: "Python backend unreachable" } };
+    const res = await proxyToPython<AutomationResult>(
+      "/api/automation/desktop-action",
+      { method: "POST", body: JSON.stringify(input) },
+      120_000
+    );
+    return res.ok ? res.data : backendFailure(res.code, res.message);
   });
 
   return {

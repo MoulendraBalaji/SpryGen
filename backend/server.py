@@ -1,9 +1,12 @@
 from __future__ import annotations
+import hmac
 import json
+import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import Any
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .config import SERVER_HOST, SERVER_PORT
 from .agents.orchestrator import Orchestrator
@@ -12,6 +15,22 @@ from .services.automation import automation
 
 orchestrator = Orchestrator()
 ws_clients: list[WebSocket] = []
+
+# Per-launch shared secret supplied by Electron. If it is missing we generate
+# one so the trust boundary is never silently disabled.
+TOKEN = os.getenv("SPRYGEN_TOKEN", "")
+if not TOKEN:
+    TOKEN = secrets.token_urlsafe(24)
+    print(f"[SPRYGEN Python Backend] SPRYGEN_TOKEN not set; generated: {TOKEN}")
+
+ALLOWED_HOSTS = {
+    f"{SERVER_HOST}:{SERVER_PORT}",
+    f"127.0.0.1:{SERVER_PORT}",
+    f"localhost:{SERVER_PORT}",
+    "127.0.0.1",
+    "localhost",
+}
+
 
 
 class ChatRequest(BaseModel):
@@ -53,8 +72,54 @@ async def lifespan(app: FastAPI):
     print("[SPRYGEN Python Backend] Shutting down")
 
 
+def _valid_token(header: str | None) -> bool:
+    """Constant-time check of the per-launch bearer token."""
+    if not header:
+        return False
+    expected = f"Bearer {TOKEN}"
+    return hmac.compare_digest(header.encode("utf-8"), expected.encode("utf-8"))
+
+
+def _valid_host(header: str | None) -> bool:
+    """Only accept the loopback host(s) this process actually binds."""
+    return bool(header) and header in ALLOWED_HOSTS
+
+
+def _trusted(headers) -> bool:
+    """A request is trusted only if it carries no Origin, a known Host, and the token.
+
+    The renderer never talks to Python directly: the Electron main process owns
+    the token and proxies every call. Browser-originated requests always send an
+    Origin header, so rejecting them closes the CORS/drive-by attack surface.
+    """
+    return (
+        headers.get("origin") is None
+        and _valid_host(headers.get("host"))
+        and _valid_token(headers.get("authorization"))
+    )
+
+
 app = FastAPI(title="SPRYGEN Multi-Agent Backend", version="3.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def trust_boundary(request: Request, call_next):
+    if request.headers.get("origin") is not None:
+        return JSONResponse(
+            status_code=403,
+            content={"ok": False, "code": "forbidden_origin", "message": "Cross-origin requests are not permitted"},
+        )
+    if not _valid_host(request.headers.get("host")):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "code": "bad_host", "message": "Unexpected Host header"},
+        )
+    if not _valid_token(request.headers.get("authorization")):
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "code": "unauthorized", "message": "Missing or invalid token"},
+        )
+    return await call_next(request)
 
 
 @app.get("/health")
@@ -114,6 +179,11 @@ async def automation_desktop_action(req: DesktopActionRequest):
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    # WebSockets bypass the HTTP middleware above, so enforce the same trust
+    # boundary on the handshake (Origin / Host / bearer token).
+    if not _trusted(ws.headers):
+        await ws.close(code=1008)
+        return
     await ws.accept()
     ws_clients.append(ws)
     try:

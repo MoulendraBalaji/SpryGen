@@ -21,6 +21,7 @@
     "package:linux": "electron-vite build && electron-builder --linux",
     "backend:install": "pip install -r backend/requirements.txt",
     "backend:dev": "python -m uvicorn backend.server:app --host 127.0.0.1 --port 8766 --reload",
+    "backend:build": "pyinstaller backend/sprygen-backend.spec --noconfirm --distpath backend/dist --workpath backend/build",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

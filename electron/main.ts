@@ -2,9 +2,12 @@ import { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, clipboard,
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { ChildProcess, spawn } from "node:child_process";
+import * as crypto from "node:crypto";
+import * as net from "node:net";
 import { registerIpc } from "./ipc";
 import { initDb } from "./services/db";
 import { healthMonitor } from "./services/healthMonitor";
+import { configurePythonBackend, probePythonHealth } from "./services/pythonClient";
 import { startReminders } from "./services/scheduler";
 import { deviceSync } from "./services/deviceSync";
 import { overlay } from "./services/overlay";
@@ -14,9 +17,52 @@ import { manualCaptureAdapter } from "./services/adapters/manualCaptureAdapter";
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let pythonProcess: ChildProcess | null = null;
+let pythonRestartTimer: NodeJS.Timeout | null = null;
+let pythonRestartAttempts = 0;
+let shuttingDown = false;
 
-const PYTHON_BACKEND_URL = "http://127.0.0.1:8766";
 const CORE_BACKEND_ID = "core-backend";
+const MAX_RESTART_ATTEMPTS = 5;
+const READY_TIMEOUT_MS = 20_000;
+
+/**
+ * Per-launch shared secret. The Python sidecar requires
+ * `Authorization: Bearer <token>` on every HTTP request and on the WS handshake,
+ * so a stale/other process on the port cannot be talked to and drive-by web
+ * pages cannot reach the backend.
+ */
+const PYTHON_TOKEN = crypto.randomBytes(32).toString("hex");
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Ask the OS for an unused loopback port so parallel launches never collide. */
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      if (addr && typeof addr === "object") {
+        const { port } = addr;
+        server.close(() => resolve(port));
+      } else {
+        server.close(() => reject(new Error("Failed to allocate a loopback port")));
+      }
+    });
+  });
+}
+
+function markBackendDead(err: unknown): void {
+  healthMonitor.update(CORE_BACKEND_ID, {
+    status: "dead",
+    lastSyncAt: null,
+    errorMessage: err instanceof Error ? err.message : String(err),
+    description: "Python multi-agent backend unreachable",
+  });
+}
 
 /**
  * The Python backend loads its own `.env` via python-dotenv, so mirror those
@@ -64,44 +110,20 @@ function trackBackendHealth(): void {
   });
 
   const check = async () => {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1500);
-      const resp = await fetch(`${PYTHON_BACKEND_URL}/health`, { signal: controller.signal });
-      clearTimeout(timer);
-
-      let healthy = false;
-      let detail = "";
-      if (resp.ok) {
-        try {
-          const data = await resp.json();
-          healthy = data?.status === "ok";
-          if (Array.isArray(data?.agents)) detail = data.agents.join(", ");
-        } catch {
-          healthy = false;
-        }
-      }
-
-      if (healthy) {
-        healthMonitor.update(CORE_BACKEND_ID, {
-          status: "healthy",
-          lastSyncAt: Date.now(),
-          errorMessage: undefined,
-          description: `FastAPI multi-agent backend — agents: ${detail || "online"}`,
-        });
-      } else {
-        healthMonitor.update(CORE_BACKEND_ID, {
-          status: "dead",
-          lastSyncAt: null,
-          errorMessage: "Backend did not respond to /health probe",
-          description: "Python multi-agent backend unreachable",
-        });
-      }
-    } catch (err) {
+    const res = await probePythonHealth();
+    if (res.ok && res.data?.status === "ok") {
+      const agents = Array.isArray(res.data.agents) ? res.data.agents.join(", ") : "";
+      healthMonitor.update(CORE_BACKEND_ID, {
+        status: "healthy",
+        lastSyncAt: Date.now(),
+        errorMessage: undefined,
+        description: `FastAPI multi-agent backend — agents: ${agents || "online"}`,
+      });
+    } else {
       healthMonitor.update(CORE_BACKEND_ID, {
         status: "dead",
         lastSyncAt: null,
-        errorMessage: `Backend health probe failed: ${err instanceof Error ? err.message : String(err)}`,
+        errorMessage: res.ok ? "Backend did not report status ok" : res.message,
         description: "Python multi-agent backend unreachable",
       });
     }
@@ -111,61 +133,132 @@ function trackBackendHealth(): void {
   setInterval(check, 5000);
 }
 
-function startPythonBackend(): void {
-  const backendDir = path.join(__dirname, "../backend");
-  const isWin = process.platform === "win32";
-  const cmd = isWin ? "python" : "python3";
+/** Spawn the Python backend (frozen sidecar in prod, `python -m uvicorn` in dev). */
+async function spawnPythonBackend(): Promise<void> {
+  if (shuttingDown) return;
 
+  let port: number;
   try {
-    pythonProcess = spawn(cmd, ["-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", "8766"], {
-      cwd: path.join(__dirname, ".."),
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: false,
-    });
+    port = await getFreePort();
+  } catch (err) {
+    console.warn("[Python Backend] Could not allocate a port:", err);
+    markBackendDead(err);
+    scheduleRestart();
+    return;
+  }
 
-    pythonProcess.stdout?.on("data", (data: Buffer) => {
-      console.log(`[Python Backend] ${data.toString().trim()}`);
-    });
+  configurePythonBackend({ baseUrl: `http://127.0.0.1:${port}`, token: PYTHON_TOKEN });
 
-    pythonProcess.stderr?.on("data", (data: Buffer) => {
-      console.log(`[Python Backend] ${data.toString().trim()}`);
-    });
+  const env = {
+    ...process.env,
+    SPRYGEN_HOST: "127.0.0.1",
+    SPRYGEN_PORT: String(port),
+    SPRYGEN_TOKEN: PYTHON_TOKEN,
+  };
+  const isWin = process.platform === "win32";
 
-    pythonProcess.on("error", (err) => {
-      console.warn("[Python Backend] Failed to start:", err.message);
-      console.warn("[Python Backend] Ensure Python 3.10+ and pip dependencies are installed.");
-      healthMonitor.update(CORE_BACKEND_ID, {
-        status: "dead",
-        lastSyncAt: null,
-        errorMessage: err.message,
-        description: "Python backend failed to spawn",
+  let proc: ChildProcess;
+  try {
+    if (app.isPackaged) {
+      // Frozen PyInstaller sidecar shipped via electron-builder extraResources.
+      const exe = path.join(
+        process.resourcesPath,
+        "backend",
+        "dist",
+        isWin ? "sprygen-backend.exe" : "sprygen-backend"
+      );
+      proc = spawn(exe, [], {
+        cwd: path.join(process.resourcesPath, "backend"),
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
       });
-    });
-
-    pythonProcess.on("exit", (code) => {
-      console.log(`[Python Backend] Exited with code ${code}`);
-      pythonProcess = null;
-      healthMonitor.update(CORE_BACKEND_ID, {
-        status: "dead",
-        lastSyncAt: null,
-        errorMessage: `Backend process exited with code ${code}`,
-        description: "Python multi-agent backend unreachable",
-      });
-    });
-
-    trackBackendHealth();
+    } else {
+      proc = spawn(
+        isWin ? "python" : "python3",
+        ["-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", String(port)],
+        {
+          cwd: path.join(__dirname, ".."),
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+        }
+      );
+    }
   } catch (err) {
     console.warn("[Python Backend] Spawn error:", err);
-    healthMonitor.update(CORE_BACKEND_ID, {
-      status: "dead",
-      lastSyncAt: null,
-      errorMessage: err instanceof Error ? err.message : String(err),
-      description: "Python backend failed to spawn",
-    });
+    markBackendDead(err);
+    scheduleRestart();
+    return;
+  }
+
+  pythonProcess = proc;
+
+  proc.stdout?.on("data", (data: Buffer) => console.log(`[Python Backend] ${data.toString().trim()}`));
+  proc.stderr?.on("data", (data: Buffer) => console.log(`[Python Backend] ${data.toString().trim()}`));
+
+  proc.on("error", (err) => {
+    console.warn("[Python Backend] Failed to start:", err.message);
+    console.warn("[Python Backend] Ensure Python 3.10+ and pip dependencies are installed.");
+    if (pythonProcess === proc) pythonProcess = null;
+    markBackendDead(err);
+    scheduleRestart();
+  });
+
+  proc.on("exit", (code) => {
+    if (pythonProcess === proc) pythonProcess = null;
+    console.log(`[Python Backend] Exited with code ${code}`);
+    markBackendDead(new Error(`Backend process exited with code ${code}`));
+    scheduleRestart();
+  });
+}
+
+/** Respawn after an unexpected exit, with exponential backoff. */
+function scheduleRestart(): void {
+  if (shuttingDown || pythonRestartTimer) return;
+  if (pythonRestartAttempts >= MAX_RESTART_ATTEMPTS) {
+    console.warn(`[Python Backend] Giving up after ${pythonRestartAttempts} restart attempts`);
+    return;
+  }
+  const attempt = pythonRestartAttempts++;
+  const delayMs = Math.min(30_000, 1000 * 2 ** attempt);
+  console.log(`[Python Backend] Restarting in ${delayMs}ms (attempt ${attempt + 1})`);
+  pythonRestartTimer = setTimeout(() => {
+    pythonRestartTimer = null;
+    void spawnPythonBackend();
+  }, delayMs);
+}
+
+/** Poll `/health` until the backend answers (or we give up). */
+async function waitForPythonReady(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (!shuttingDown && Date.now() < deadline) {
+    if (!pythonProcess && pythonRestartAttempts >= MAX_RESTART_ATTEMPTS) return false;
+    const res = await probePythonHealth();
+    if (res.ok && res.data?.status === "ok") return true;
+    await delay(300);
+  }
+  return false;
+}
+
+/** Start the backend and wait for readiness *before* IPC is enabled. */
+async function startPythonBackend(): Promise<void> {
+  trackBackendHealth();
+  await spawnPythonBackend();
+  if (await waitForPythonReady(READY_TIMEOUT_MS)) {
+    pythonRestartAttempts = 0;
+    console.log("[Python Backend] Ready");
+  } else {
+    console.warn("[Python Backend] Did not become ready before the timeout");
   }
 }
 
 function stopPythonBackend(): void {
+  shuttingDown = true;
+  if (pythonRestartTimer) {
+    clearTimeout(pythonRestartTimer);
+    pythonRestartTimer = null;
+  }
   if (pythonProcess && !pythonProcess.killed) {
     pythonProcess.kill("SIGTERM");
     pythonProcess = null;
@@ -319,7 +412,9 @@ function registerGlobalHotkeys(): void {
 app.whenReady().then(async () => {
   loadEnvFile();
   await initDb();
-  startPythonBackend();
+  // Wait for the Python sidecar to report healthy *before* exposing IPC, so the
+  // renderer never races a half-started backend.
+  await startPythonBackend();
   const { notify } = registerIpc();
   mainWindow = createWindow();
   createTray();
@@ -332,6 +427,10 @@ app.whenReady().then(async () => {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+});
+
+app.on("before-quit", () => {
+  shuttingDown = true;
 });
 
 app.on("will-quit", () => {
