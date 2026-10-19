@@ -409,6 +409,18 @@ function registerGlobalHotkeys(): void {
   }
 }
 
+// Test/CI hook: keep the SQLite database in a caller-supplied directory so an
+// end-to-end test can start from a clean slate and verify persistence across
+// restarts. Harmless in normal runs (unset).
+if (process.env.SPRYGEN_USER_DATA) {
+  try {
+    fs.mkdirSync(process.env.SPRYGEN_USER_DATA, { recursive: true });
+    app.setPath("userData", process.env.SPRYGEN_USER_DATA);
+  } catch (err) {
+    console.warn("[SPRYGEN] Could not apply SPRYGEN_USER_DATA:", err);
+  }
+}
+
 app.whenReady().then(async () => {
   loadEnvFile();
   await initDb();

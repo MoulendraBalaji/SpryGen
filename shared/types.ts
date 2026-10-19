@@ -1,5 +1,16 @@
 export type AdapterStatus = "healthy" | "degraded" | "dead" | "unauthenticated";
 
+/**
+ * Providers whose prompts leave this device. Everything else (ollama, the
+ * regex fast-path, …) answers locally. Used to surface privacy in the UI.
+ */
+export const CLOUD_PROVIDERS = ["groq", "cerebras", "openrouter", "mistral"] as const;
+
+export function isCloudProvider(provider: string | undefined | null): boolean {
+  if (!provider) return false;
+  return (CLOUD_PROVIDERS as readonly string[]).includes(provider.toLowerCase());
+}
+
 export interface AdapterState {
   id: string;
   label: string;
@@ -41,6 +52,8 @@ export interface ChatMessage {
   role: ChatRole;
   text: string;
   intent?: string;
+  /** Which provider produced this answer (e.g. "ollama", "groq", "regex"). */
+  provider?: string;
   createdAt: number;
 }
 

@@ -1,5 +1,6 @@
 import { screen, BrowserWindow } from "electron";
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { profileService } from "./profileService";
 import { OverlayMode, OverlayStatus, SuppressedNotification } from "../../shared/types";
 
@@ -76,7 +77,7 @@ class OverlayService extends EventEmitter {
 
   public queueNotification(title: string, body: string): SuppressedNotification {
     const item: SuppressedNotification = {
-      id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+      id: randomUUID(),
       title,
       body,
       queuedAt: Date.now()

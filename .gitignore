@@ -8,6 +8,12 @@ companion-app/node_modules/
 .pnp
 .pnp.js
 
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+.tmp-devsync-*/
+
 # Build Outputs
 dist/
 dist-electron/

@@ -67,6 +67,29 @@ def test_privacy_gate_excludes_cloud(monkeypatch):
     assert [p.name for p in providers.resolve(require_local=True)] == ["ollama"]
 
 
+def test_privacy_gate_personal_data_never_reaches_cloud(monkeypatch):
+    """A personal-data prompt must only ever hit a local provider."""
+    monkeypatch.setenv("LLM_PROVIDERS", "groq,ollama")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    calls: list[str] = []
+
+    async def fake_call(cfg, messages, tools, model):
+        calls.append(cfg.name)
+        return _ok("local answer")
+
+    monkeypatch.setattr(providers, "_call", fake_call)
+    result = asyncio.run(
+        providers.chat(
+            [{"role": "user", "content": "remember my password is hunter2"}],
+            require_local=True,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["provider"] == "ollama"
+    assert "groq" not in calls
+
+
 def test_no_provider_when_all_cooling(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDERS", "groq,ollama")
     monkeypatch.setenv("GROQ_API_KEY", "test-key")

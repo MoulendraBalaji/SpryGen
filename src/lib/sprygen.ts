@@ -1,4 +1,4 @@
-import { SprygenAPI, UserProfile, VoiceStatus, DeviceSyncStatus, IntentResult } from "../../shared/types";
+import { SprygenAPI } from "../../shared/types";
 
 declare global {
   interface Window {
@@ -6,36 +6,22 @@ declare global {
   }
 }
 
-const defaultProfile: UserProfile = {
-  activeHours: { start: 9, end: 22 },
-  phrasingStyle: "concise",
-  recurringCategories: [],
-  learnedFacts: [],
-  summary: ""
-};
+/**
+ * True when the preload script bridged the IPC API into the renderer.
+ *
+ * When this is false the app refuses to render normally: there is deliberately
+ * **no fallback/mock API** here any more. A silent fallback used to fabricate
+ * empty tasks, empty chats and fake "answers", which looked like the app was
+ * working while it was actually broken. Missing bridge = blocking error screen.
+ */
+export function bridgeAvailable(): boolean {
+  return typeof window !== "undefined" && !!window.sprygen;
+}
 
-const defaultVoiceStatus: VoiceStatus = {
-  state: "idle",
-  enrolled: false,
-  active: false,
-  engineAvailable: false,
-  speakerSimilarityThreshold: 0.85
-};
-
-const defaultSyncStatus: DeviceSyncStatus = {
-  paired: false,
-  pairingCode: "000000",
-  serverPort: 8765,
-  connectedDevices: 0
-};
-
-const defaultIntent: IntentResult = {
-  intent: "chat",
-  params: {},
-  routedTo: "local",
-  answer: "SPRYGEN is initializing…"
-};
-
-export const sprygen: SprygenAPI = (typeof window !== "undefined" && (window as any).sprygen)
-  ? ((window as any).sprygen as SprygenAPI)
-  : ({} as SprygenAPI);
+/**
+ * The renderer's only access to the main process. If the preload bridge is
+ * missing this is an empty object, so any call throws a `TypeError` instead of
+ * returning fabricated data. Guard with {@link bridgeAvailable} at the root and
+ * render `<BridgeError />`.
+ */
+export const sprygen: SprygenAPI = (bridgeAvailable() ? window.sprygen! : {}) as SprygenAPI;

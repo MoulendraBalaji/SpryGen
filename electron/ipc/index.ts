@@ -115,6 +115,29 @@ export function registerIpc() {
     category: "config"
   });
 
+  // One row per provider in the chain so the Sources panel shows exactly which
+  // providers are usable and whether each one keeps prompts on this device.
+  const PROVIDER_ROWS: { id: string; label: string; keyEnv?: string; local: boolean; note: string }[] = [
+    { id: "provider:ollama", label: "Ollama", local: true, note: "Local model server. No API key required." },
+    { id: "provider:groq", label: "Groq", keyEnv: "GROQ_API_KEY", local: false, note: "Free-tier cloud LLM." },
+    { id: "provider:cerebras", label: "Cerebras", keyEnv: "CEREBRAS_API_KEY", local: false, note: "Free-tier cloud LLM." },
+    { id: "provider:openrouter", label: "OpenRouter", keyEnv: "OPENROUTER_API_KEY", local: false, note: "Free-tier cloud LLM (:free models)." },
+    { id: "provider:mistral", label: "Mistral", keyEnv: "MISTRAL_API_KEY", local: false, note: "Free-tier cloud LLM." }
+  ];
+  for (const row of PROVIDER_ROWS) {
+    const configured = row.local || (!!row.keyEnv && !!process.env[row.keyEnv]);
+    healthMonitor.register({
+      id: row.id,
+      label: row.label,
+      description: `${row.note} ${row.local ? "Stays on this device." : "Prompts leave this device when used."} ${
+        configured ? "Configured." : "Not configured — skipped."
+      }`,
+      status: configured ? "healthy" : "unauthenticated",
+      lastSyncAt: null,
+      category: "provider"
+    });
+  }
+
   // Stream health-monitor changes (backend probes, adapter reconnects) to the renderer.
   healthMonitor.subscribe(() => pushEvent("integrations:update"));
 

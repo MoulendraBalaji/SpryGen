@@ -12,13 +12,16 @@ import { RecallPanel } from "./components/RecallPanel";
 import { ScreenContext } from "./components/ScreenContext";
 import { AutomationPanel } from "./components/AutomationPanel";
 import { CommandPalette } from "./components/CommandPalette";
-import { sprygen } from "./lib/sprygen";
+import { sprygen, bridgeAvailable } from "./lib/sprygen";
+import { BridgeError } from "./components/BridgeError";
 import { useChat } from "./store/chat";
 
 export default function App() {
   const send = useChat((s) => s.send);
+  const bridgeReady = bridgeAvailable();
 
   useEffect(() => {
+    if (!bridgeReady) return;
     const unsubTranscript = sprygen.onEvent("voice:transcript", (text: string) => {
       send(text);
     });
@@ -26,7 +29,7 @@ export default function App() {
     return () => {
       unsubTranscript();
     };
-  }, [send]);
+  }, [send, bridgeReady]);
 
   const renderContent = (tab: ShellTab) => {
     switch (tab) {
@@ -62,6 +65,8 @@ export default function App() {
         return null;
     }
   };
+
+  if (!bridgeReady) return <BridgeError />;
 
   return (
     <div className="app">

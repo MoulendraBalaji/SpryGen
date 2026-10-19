@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sprygen } from "../lib/sprygen";
+import { bridgeAvailable, sprygen } from "../lib/sprygen";
 import { AdapterState } from "../../shared/types";
 
 interface IntegrationsState {
@@ -27,7 +27,7 @@ export const useIntegrations = create<IntegrationsState>((set) => ({
   }
 }));
 
-if (typeof window !== "undefined") {
+if (bridgeAvailable()) {
   sprygen.onEvent("integrations:update", () => {
     useIntegrations.getState().load();
   });

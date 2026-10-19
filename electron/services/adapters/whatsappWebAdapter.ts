@@ -2,6 +2,7 @@ import { BaseAdapter } from "./IngestAdapter";
 import { healthMonitor } from "../healthMonitor";
 import { dbLayer } from "../db";
 import * as chrono from "chrono-node";
+import { randomUUID } from "node:crypto";
 
 export class WhatsappWebAdapter extends BaseAdapter {
   id = "whatsapp-web";
@@ -13,7 +14,7 @@ export class WhatsappWebAdapter extends BaseAdapter {
   async authorize() {
     this.setStatus("degraded");
     // Generate QR Pairing session
-    this.qrCodeData = `https://web.whatsapp.com/pair/${Math.random().toString(36).slice(2)}`;
+    this.qrCodeData = `https://web.whatsapp.com/pair/${randomUUID().replace(/-/g, "")}`;
     healthMonitor.update(this.id, {
       status: "degraded",
       errorMessage: "QR pairing initiated. Scan with WhatsApp Mobile to pair."

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sprygen } from "../lib/sprygen";
+import { bridgeAvailable, sprygen } from "../lib/sprygen";
 import { OverlayStatus, SuppressedNotification } from "../../shared/types";
 
 interface FocusState {
@@ -47,7 +47,7 @@ export const useFocus = create<FocusState>((set, get) => ({
   }
 }));
 
-if (typeof window !== "undefined") {
+if (bridgeAvailable()) {
   ["overlay:mode-change", "overlay:notification-queued", "overlay:queue-flushed"].forEach(
     (channel) => {
       sprygen.onEvent(channel, () => {

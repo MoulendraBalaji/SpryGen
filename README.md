@@ -42,14 +42,15 @@
 * **Browser Automation (Selenium + BeautifulSoup)**: Multi-step browser tasks (navigate, click, type, extract, screenshot) with an operator **Kill Switch**, plus a dedicated **Web Scraper** panel.
 * **Web Scraping is a native agent tool**: ask the assistant to "scrape/summarize/analyze `<url>`" and SPRYGEN fetches the page, extracts clean text, and reasons over it with the LLM.
 * **Desktop Actions (PyAutoGUI)**: Screenshot, type, hotkeys, bounded mouse moves and clicks — all running with `FAILSAFE=True` and an abort flag.
-* **Hybrid LLM routing**: Groq → Gemini → local Ollama → deterministic fast-path rules.
+* **Hybrid LLM routing**: Groq → Cerebras → OpenRouter → Mistral → local Ollama → deterministic fast-path rules. Providers without a key are skipped; a keyless install runs entirely on Ollama.
 
 ### 🧠 5. Hybrid NLP & Encrypted Persistent Memory
 * **Multi-Tiered Query Engine**:
   1. Instant regex entity extraction and natural language date parsing (`chrono-node`).
-  2. Prototype semantic matching for instant system controls.
-  3. Cloud LLMs (Groq, Gemini) for complex reasoning.
-  4. Local Ollama LLM for offline privacy.
+  2. Anchored fast-path rules for explicit commands (`remind me to …`, `todo: …`, `remember that …`).
+  3. Free-tier cloud LLMs (Groq, Cerebras, OpenRouter, Mistral) for complex reasoning.
+  4. Local Ollama LLM for offline/privacy-sensitive prompts.
+* **Privacy gate**: prompts classified as personal (memory, passwords, schedules, screen/voice payloads) are forced onto a local provider and never sent to a cloud model.
 * **Local RAG Vector Store**: 64-dimensional semantic text embeddings with cosine search for instant recall of facts, notes, and past tasks.
 
 ### 📱 6. Mobile Companion App
@@ -59,6 +60,28 @@
 
 ### 🎨 7. Opera GX + Arc Reactor Design System
 * Frameless **Opera GX** titlebar, tactical monospace dark shell, keyboard-first command palette (`Ctrl+K`), and a multi-ring **Arc Reactor HUD** that surfaces engine state (`idle`, `listening`, `processing`, `automating`, `error`).
+
+---
+
+## ✅ Implemented vs. Planned
+
+Everything below is implemented in this repository and covered by the automated
+acceptance suite; anything not listed is **not** claimed.
+
+| Area | Status |
+| --- | --- |
+| Electron + React desktop shell, Arc Reactor HUD, command palette, overlay/DND | ✅ Implemented |
+| SQLite (better-sqlite3) as the single datastore; in-memory emergency fallback | ✅ Implemented |
+| Stateless Python FastAPI sidecar (`/api/chat` → `{answer, intent, actions}`) | ✅ Implemented |
+| Keyless provider chain (Groq/Cerebras/OpenRouter/Mistral → Ollama) with cooldowns, `Retry-After`, privacy gate | ✅ Implemented |
+| Anchored fast-path + LLM tool-calling; side-effecting actions require UI confirmation | ✅ Implemented |
+| Per-launch token, random port, Host/Origin checks, SSRF guards, single-flight automation, ESC kill switch | ✅ Implemented |
+| LAN sync server: `/status` (no secrets), `/pair` per-device token, `/capture`, 64 KB body cap, PIN lockout | ✅ Implemented |
+| Local voice pipeline (openWakeWord, faster-whisper, Resemblyzer, Kokoro) with fail-closed speaker lock | ✅ Implemented (optional ML deps) |
+| Screen understanding via `desktopCapturer` + local Ollama vision | ✅ Implemented |
+| Expo companion app (pairing, quick capture, notification relay) | ✅ Implemented |
+| Cross-platform installers / notarized macOS builds | ⚠️ Partially verified — CI builds on Windows/Linux; macOS packaging is configured but not exercised in CI |
+| Multi-user accounts / cloud sync / mobile push | ❌ Not planned |
 
 ---
 
@@ -122,8 +145,8 @@ flowchart TB
 
 ```bash
 # Clone the repository
-git clone https://github.com/MoulendraBalaji/sprygen.git
-cd Jarvis_Assistant
+git clone https://github.com/MoulendraBalaji/SpryGen.git
+cd SpryGen
 
 # Install Desktop dependencies
 npm install
@@ -202,36 +225,88 @@ SPRYGEN_OLLAMA_URL="http://127.0.0.1:11434" # Local Ollama endpoint (no key)
 SPRYGEN_SYNC_PORT=8765              # WebSocket sync port for mobile companion app
 ```
 
+### Free providers
+
+You do **not** need any API key: with every key blank, SPRYGEN runs fully offline
+against a local [Ollama](https://ollama.com/) server. The optional cloud
+providers all have free tiers at the time of writing:
+
+| Provider | Free tier | Notes |
+| --- | --- | --- |
+| Groq | Yes | Fast inference; rate-limited free tier. |
+| Cerebras | Yes | Free tier; rate-limited. |
+| OpenRouter | Yes | Use the `:free` model variants. |
+| Mistral | Yes | Free experimentation tier. |
+| Ollama | N/A (local) | No key, no account, works offline. |
+
+> Free tiers, model names and rate limits change often — check each provider's
+> pricing page before relying on them. Provider/model configuration lives in
+> `backend/providers.json`; no code change is needed to update a model name.
+
+---
+
+## 🧪 Tests & Acceptance
+
+Every phase has an automated check. Run the whole suite with one command:
+
+```bash
+# Linux / macOS (Git Bash on Windows)
+bash scripts/acceptance.sh
+
+# Windows (PowerShell)
+./scripts/acceptance.ps1
+```
+
+The script runs, in order, and prints `PASS`/`FAIL` for phases 1–8:
+
+1. `npm run typecheck` — typed IPC surface / datastore
+2. `npm run build` — shared schemas + renderer/main bundles
+3. `pytest backend/tests` — routing, provider fallback, trust boundary, SSRF,
+   sync-server security, voice/vision fail-closed
+4. `npm run test` — Vitest (stores, health panel, bridge error screen)
+5. `npm run test:e2e` — Playwright `_electron` smoke test (starts the real app
+   against a mock OpenAI-compatible model, creates a task, restarts, verifies
+   SQLite persistence)
+
+CI runs the same acceptance script on `ubuntu-latest` and `windows-latest` for
+every push and pull request (`.github/workflows/ci.yml`). Release builds depend
+on that workflow passing.
+
 ---
 
 ## 📁 Repository Structure
 
 ```
-Sprygen_Assistant/
+SpryGen/
 ├── electron/                   # Electron Main & Preload Processes
 │   ├── ipc/                    # Type-Safe IPC Channel Registrations
 │   ├── services/               # Background Services & Ingest Adapters
 │   │   ├── adapters/           # WhatsApp, Notification Ingest
-│   │   ├── automation/         # (backend) Selenium / PyAutoGUI suite
 │   │   ├── voice/              # Thin client over the local Python voice engine
-│   │   ├── db.ts               # SQLite / JSON Fallback Database
+│   │   ├── db.ts               # SQLite (better-sqlite3) + in-memory emergency fallback
+│   │   ├── deviceSync.ts       # LAN pairing + capture server
 │   │   ├── overlay.ts          # Window State Machine & DND Manager
-│   │   └── router.ts           # Hybrid NLP Intent Classifier
+│   │   └── pythonClient.ts     # Typed proxy to the Python sidecar
 │   ├── main.ts                 # Main Process Entry Point
 │   └── preload.ts              # CommonJS Context Bridge Preload
 ├── src/                        # React 18 Renderer Process
 │   ├── components/             # Opera GX Shell, HUD, Panels
 │   ├── design-system/          # Clay Tokens, Buttons, Inputs, Cards
-│   ├── lib/                    # Client IPC Proxies & API Fallbacks
+│   ├── lib/                    # Typed bridge access (no mock/fake fallback)
 │   ├── store/                  # Zustand Global State Stores
 │   ├── App.tsx                 # Core Dashboard Shell
 │   └── main.tsx                # React Mount with Error Boundary
-├── backend/                    # Python FastAPI multi-agent backend
+├── backend/                    # Python FastAPI, stateless sidecar
 │   ├── agents/                 # Chat / Task / Memory / Briefing agents
+│   ├── llm/                    # Intent router + provider chain
 │   ├── services/automation/    # Selenium + PyAutoGUI + BeautifulSoup
-│   └── server.py               # FastAPI app (port 8766)
+│   ├── services/voice/         # Local voice pipeline (fail-closed)
+│   ├── services/vision.py      # Screen → local Ollama vision
+│   └── server.py               # FastAPI app (dynamic port + launch token)
 ├── companion-app/              # React Native (Expo) Mobile Companion
-├── shared/                     # Shared TypeScript Interfaces & Types
+├── shared/                     # Shared TypeScript types + zod IPC schemas
+├── tests/                      # Vitest unit tests + Playwright e2e
+├── scripts/                    # Acceptance runners + security check helper
 ├── electron-builder.yml        # Multi-Platform Packaging Specs
 ├── electron.vite.config.ts     # Electron-Vite Bundler Configuration
 ├── tsconfig.json               # Root TypeScript Configuration
@@ -242,9 +317,11 @@ Sprygen_Assistant/
 
 ## 🛡️ Privacy & Security
 
-* **100% Local Storage**: All tasks, history, notes, and biometric embeddings are saved directly on your device.
+* **Local Storage**: All tasks, history, notes, and biometric embeddings are saved in a local SQLite database on your device.
 * **Biometric Protection**: Speaker voiceprints are stored as numeric vectors without retaining raw audio files.
-* **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs strictly over your local Wi-Fi network with PIN pairing.
+* **Not authentication**: the speaker lock is a convenience gate. It can be fooled by a replay recording or a synthetic/cloned voice, so do not use it to protect secrets on a shared machine. When the local models are missing it fails closed (nothing is verified).
+* **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs over your local network with per-device tokens issued by a PIN handshake. `/status` on the LAN never exposes the pairing code or tokens.
+* **Prompt privacy**: personal-data and screen/voice prompts are forced onto a local provider; only non-personal prompts may use a configured cloud provider.
 
 ---
 

@@ -54,6 +54,7 @@ export const useChat = create<ChatState>((set, get) => ({
         role: "assistant",
         text: res.answer,
         intent: res.intent,
+        provider: res.provider,
         createdAt: Date.now()
       };
       set({ messages: [...get().messages, assistantMsg], thinking: false });

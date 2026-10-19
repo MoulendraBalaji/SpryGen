@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ClayCard, ClayInput, ClayButton } from "../design-system";
 import { useChat } from "../store/chat";
-import { IntentResult } from "../../shared/types";
+import { IntentResult, isCloudProvider } from "../../shared/types";
 
 export function ChatPanel() {
   const { messages, thinking, load, send } = useChat();
@@ -31,7 +31,7 @@ export function ChatPanel() {
     <ClayCard large eyebrow="08 · Conversation" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 }}>
         {messages.map((m) => (
-          <Bubble key={m.id} role={m.role} text={m.text} intent={m.intent} />
+          <Bubble key={m.id} role={m.role} text={m.text} intent={m.intent} provider={m.provider} />
         ))}
         {thinking && <Bubble role="assistant" text="…" intent={undefined} />}
         <div ref={endRef} />
@@ -44,12 +44,13 @@ export function ChatPanel() {
   );
 }
 
-function Bubble({ role, text, intent }: { role: string; text: string; intent?: string }) {
+function Bubble({ role, text, intent, provider }: { role: string; text: string; intent?: string; provider?: string }) {
   const isUser = role === "user";
   return (
     <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start" }}>
       <div
         className="console-pre"
+        data-testid={isUser ? "chat-bubble-user" : "chat-bubble-assistant"}
         style={{
           maxWidth: "78%",
           padding: "10px 12px",
@@ -60,9 +61,15 @@ function Bubble({ role, text, intent }: { role: string; text: string; intent?: s
         }}
       >
         <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
-        {intent && !isUser && (
+        {!isUser && (intent || provider) && (
           <div className="console-meta" style={{ marginTop: 6, color: "var(--console-text-faint)" }}>
-            intent: {intent}
+            {intent && <span data-testid="chat-intent">intent: {intent}</span>}
+            {intent && provider && <span> · </span>}
+            {provider && (
+              <span data-testid="chat-provider">
+                provider: {provider} ({isCloudProvider(provider) ? "cloud" : "local"})
+              </span>
+            )}
           </div>
         )}
       </div>

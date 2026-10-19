@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sprygen } from "../lib/sprygen";
+import { bridgeAvailable, sprygen } from "../lib/sprygen";
 import { Task } from "../../shared/types";
 
 interface TasksState {
@@ -33,3 +33,11 @@ export const useTasks = create<TasksState>((set, get) => ({
     await get().load();
   }
 }));
+
+// Chat-applied actions (e.g. "todo: buy milk") and companion quick-capture both
+// emit `tasks:update`; refresh the board so the UI stays in sync.
+if (bridgeAvailable()) {
+  sprygen.onEvent("tasks:update", () => {
+    useTasks.getState().load();
+  });
+}

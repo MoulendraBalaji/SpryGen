@@ -1,0 +1,5 @@
+# Development and test dependencies
+pytest
+pytest-asyncio
+httpx
+pytest-cov

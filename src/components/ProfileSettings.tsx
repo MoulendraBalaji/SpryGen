@@ -137,7 +137,7 @@ export function ProfileSettings() {
         <div className="console-row" style={{ justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 12 }}>Voice-Lock & Speaker Verification</div>
-            <div className="console-meta">Eagle acoustic voiceprint. Rejects unauthorized voices.</div>
+            <div className="console-meta">Resemblyzer speaker embedding. Rejects unauthorized voices (convenience gate only — a recording can fool it).</div>
           </div>
           <ClayBadge status={voiceStatus?.enrolled ? "healthy" : "unauthenticated"}>
             {voiceStatus?.enrolled ? "Voice-Locked" : "Not Enrolled"}
@@ -177,7 +177,7 @@ export function ProfileSettings() {
         <div className="console-row" style={{ marginTop: 16, justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 12 }}>Automatic listening (wake word)</div>
-            <div className="console-meta">
+            <div className="console-meta" data-testid="voice-engine-status">
               state: {voice.status?.state ?? "…"}
               {voice.status?.engineAvailable ? "" : " · voice engine unavailable"}
             </div>

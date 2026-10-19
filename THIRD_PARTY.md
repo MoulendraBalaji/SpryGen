@@ -30,7 +30,17 @@ SPRYGEN itself is released under the MIT License (see [`LICENSE`](./LICENSE)).
 | postcss | MIT |
 | @vitejs/plugin-react | MIT |
 | typescript | Apache-2.0 |
-| electron-builder | MIT |
+
+## Test & CI tooling (dev dependencies)
+
+| Package | License |
+| --- | --- |
+| vitest, @vitest/coverage-v8 | MIT |
+| jsdom | MIT |
+| @testing-library/react, jest-dom, user-event | MIT |
+| @playwright/test (Playwright) | Apache-2.0 |
+| pytest, pytest-asyncio, pytest-cov | MIT |
+| esbuild (used by the sync security check) | MIT |
 
 ## Python backend
 

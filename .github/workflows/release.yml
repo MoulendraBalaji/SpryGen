@@ -4,35 +4,18 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  checks:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build Vite
-        run: npm run build
+  # Released binaries must not ship unless the full CI matrix passed for this
+  # commit. This calls the same reusable workflow used by push/PR CI.
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   build:
-    needs: checks
+    needs: ci
     strategy:
       matrix:
         include:

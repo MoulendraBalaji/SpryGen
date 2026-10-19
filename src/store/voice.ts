@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sprygen } from "../lib/sprygen";
+import { bridgeAvailable, sprygen } from "../lib/sprygen";
 import { VoiceStatus } from "../../shared/types";
 
 export interface VoiceRuntimeError {
@@ -46,7 +46,7 @@ export const useVoice = create<VoiceControlState>((set, get) => ({
   clearError: () => set({ error: null })
 }));
 
-if (typeof window !== "undefined") {
+if (bridgeAvailable()) {
   sprygen.onEvent("voice:state-change", () => {
     useVoice.getState().load();
   });
