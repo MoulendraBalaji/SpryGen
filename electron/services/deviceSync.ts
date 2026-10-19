@@ -1,22 +1,46 @@
 import { EventEmitter } from "node:events";
 import * as http from "node:http";
 import * as crypto from "node:crypto";
+import { WebSocketServer, WebSocket } from "ws";
 import { dbLayer } from "./db";
 import { DeviceSyncStatus } from "../../shared/types";
 
+/** Hard cap on any single HTTP body or WebSocket frame (64 KB). */
+const MAX_BODY_BYTES = 64 * 1024;
+/** Invalid pairing attempts before the PIN is rotated and the device is locked out. */
+const MAX_PAIR_ATTEMPTS = 5;
+/** How long a locked-out device must wait before it can try again. */
+const LOCKOUT_MS = 5 * 60 * 1000;
+
+/** Shape returned by the LAN `/status` probe — deliberately contains no secrets. */
+interface PublicSyncStatus {
+  paired: boolean;
+  serverPort: number;
+  connectedDevices: number;
+}
+
 export class DeviceSyncService extends EventEmitter {
   private server: http.Server | null = null;
+  private wss: WebSocketServer | null = null;
   private port = 8765;
   private pairingCode: string = this.generatePin();
-  private sockets = new Set<any>();
+  private readonly clients = new Set<WebSocket>();
+  /** Per-device bearer tokens issued by a successful `/pair`. */
+  private readonly deviceTokens = new Set<string>();
   private isPaired = false;
-
-  constructor() {
-    super();
-  }
+  private pairAttempts = 0;
+  private lockedUntil = 0;
 
   private generatePin(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // Cryptographically strong 6-digit PIN (000000–999999).
+    return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+  }
+
+  private constantTimeEqual(a: string, b: string): boolean {
+    const bufA = Buffer.from(a, "utf-8");
+    const bufB = Buffer.from(b, "utf-8");
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
   }
 
   public getPairingCode(): string {
@@ -25,144 +49,156 @@ export class DeviceSyncService extends EventEmitter {
 
   public regenerateCode(): string {
     this.pairingCode = this.generatePin();
+    this.pairAttempts = 0;
+    this.lockedUntil = 0;
     this.emit("code-regenerated", this.pairingCode);
     return this.pairingCode;
   }
 
   public hasPairedDevice(): boolean {
-    return this.isPaired || this.sockets.size > 0;
+    return this.isPaired || this.clients.size > 0;
   }
 
+  /** Trusted renderer/IPC view — includes the pairing code for the desktop UI only. */
   public getStatus(): DeviceSyncStatus {
     return {
       paired: this.hasPairedDevice(),
       pairingCode: this.pairingCode,
       serverPort: this.port,
-      connectedDevices: this.sockets.size
+      connectedDevices: this.clients.size
     };
+  }
+
+  /** Untrusted LAN view — never exposes the pairing code or device tokens. */
+  private getPublicStatus(): PublicSyncStatus {
+    return {
+      paired: this.hasPairedDevice(),
+      serverPort: this.port,
+      connectedDevices: this.clients.size
+    };
+  }
+
+  private respond(res: http.ServerResponse, status: number, body: unknown): void {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+  }
+
+  private readBody(req: http.IncomingMessage, res: http.ServerResponse, onDone: (raw: string) => void): void {
+    const declared = Number(req.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      this.respond(res, 413, { error: "Payload too large" });
+      req.destroy();
+      return;
+    }
+
+    let size = 0;
+    let aborted = false;
+    const chunks: Buffer[] = [];
+
+    req.on("data", (chunk: Buffer) => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        aborted = true;
+        this.respond(res, 413, { error: "Payload too large" });
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on("end", () => {
+      if (aborted) return;
+      onDone(Buffer.concat(chunks).toString("utf-8"));
+    });
+
+    req.on("error", () => {
+      if (aborted) return;
+      aborted = true;
+      this.respond(res, 400, { error: "Invalid request" });
+    });
+  }
+
+  private bearerToken(req: http.IncomingMessage): string | null {
+    const header = req.headers["authorization"];
+    if (typeof header !== "string") return null;
+    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+    return match ? match[1].trim() : null;
+  }
+
+  private isAuthorized(req: http.IncomingMessage): boolean {
+    const presented = this.bearerToken(req);
+    if (!presented) return false;
+    let authorized = false;
+    for (const token of this.deviceTokens) {
+      // Compare every candidate to avoid leaking which token (if any) matched.
+      if (this.constantTimeEqual(token, presented)) authorized = true;
+    }
+    return authorized;
   }
 
   public async start(): Promise<void> {
     if (this.server) return;
 
     this.server = http.createServer((req, res) => {
-      // Basic HTTP REST endpoint for companion app handshake / discovery
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      // No CORS headers: only the companion app's native fetch / WebSocket client talks here.
+      const url = (req.url || "").split("?")[0];
 
-      if (req.method === "OPTIONS") {
-        res.writeHead(204);
-        res.end();
+      if (url === "/status" && (req.method === "GET" || req.method === "HEAD")) {
+        this.respond(res, 200, this.getPublicStatus());
         return;
       }
 
-      if (req.url === "/status") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(this.getStatus()));
+      if (url === "/pair" && req.method === "POST") {
+        this.handlePair(req, res);
         return;
       }
 
-      if (req.url === "/pair" && req.method === "POST") {
-        let body = "";
-        req.on("data", (chunk) => (body += chunk));
-        req.on("end", () => {
-          try {
-            const data = JSON.parse(body);
-            if (data.code === this.pairingCode) {
-              this.isPaired = true;
-              this.emit("paired");
-              res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: true, message: "Paired successfully with SPRYGEN." }));
-            } else {
-              res.writeHead(401, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: false, message: "Invalid pairing code." }));
-            }
-          } catch {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Invalid JSON" }));
-          }
-        });
+      if (url === "/capture" && req.method === "POST") {
+        if (!this.isAuthorized(req)) {
+          this.respond(res, 401, { error: "Unauthorized" });
+          return;
+        }
+        this.handleCapture(req, res);
         return;
       }
 
-      if (req.url === "/capture" && req.method === "POST") {
-        let body = "";
-        req.on("data", (chunk) => (body += chunk));
-        req.on("end", () => {
-          try {
-            const data = JSON.parse(body);
-            if (data.text) {
-              const task = dbLayer.insert("tasks", {
-                id: dbLayer.genId(),
-                createdAt: Date.now(),
-                title: data.text.slice(0, 200),
-                dueAt: data.dueAt || null,
-                completed: 0,
-                source: "companion_quick_capture",
-                recurring: null,
-                tags: JSON.stringify(["mobile_capture"])
-              });
-              this.emit("task-created", task);
-              res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: true, task }));
-              return;
-            }
-          } catch {
-            /* ignore */
-          }
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Invalid payload" }));
-        });
-        return;
-      }
-
-      res.writeHead(404);
-      res.end();
+      this.respond(res, 404, { error: "Not found" });
     });
 
-    // Native WebSocket Upgrade handling
-    this.server.on("upgrade", (req, socket) => {
-      const key = req.headers["sec-websocket-key"];
-      if (!key) {
-        socket.destroy();
-        return;
-      }
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY_BYTES });
 
-      const acceptKey = crypto
-        .createHash("sha1")
-        .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-        .digest("base64");
-
-      const headers = [
-        "HTTP/1.1 101 Switching Protocols",
-        "Upgrade: websocket",
-        "Connection: Upgrade",
-        `Sec-WebSocket-Accept: ${acceptKey}`
-      ];
-      socket.write(headers.join("\r\n") + "\r\n\r\n");
-
-      this.sockets.add(socket);
+    this.wss.on("connection", (socket: WebSocket) => {
+      this.clients.add(socket);
       this.isPaired = true;
       this.emit("paired");
 
-      socket.on("data", (buffer: Buffer) => {
+      socket.on("message", (data: WebSocket.RawData) => {
         try {
-          const parsed = this.decodeWebSocketFrame(buffer);
-          if (parsed) {
-            this.handleSocketMessage(parsed, socket);
-          }
+          const text = typeof data === "string" ? data : data.toString("utf-8");
+          this.handleSocketMessage(JSON.parse(text), socket);
         } catch {
-          /* ignore frame decode issues */
+          /* ignore malformed frames */
         }
       });
 
       socket.on("close", () => {
-        this.sockets.delete(socket);
+        this.clients.delete(socket);
       });
 
       socket.on("error", () => {
-        this.sockets.delete(socket);
+        this.clients.delete(socket);
+      });
+    });
+
+    this.server.on("upgrade", (req, socket, head) => {
+      if (!this.isAuthorized(req)) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      this.wss?.handleUpgrade(req, socket, head, (ws) => {
+        this.wss?.emit("connection", ws, req);
       });
     });
 
@@ -175,63 +211,91 @@ export class DeviceSyncService extends EventEmitter {
     });
   }
 
-  private decodeWebSocketFrame(buffer: Buffer): any | null {
-    if (buffer.length < 2) return null;
-    const isMasked = (buffer[1] & 0x80) === 0x80;
-    let length = buffer[1] & 0x7f;
-    let offset = 2;
-
-    if (length === 126) {
-      length = buffer.readUInt16BE(2);
-      offset = 4;
-    } else if (length === 127) {
-      offset = 10;
+  private handlePair(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (Date.now() < this.lockedUntil) {
+      const seconds = Math.ceil((this.lockedUntil - Date.now()) / 1000);
+      this.respond(res, 429, {
+        success: false,
+        message: `Too many invalid attempts. Try again in ${seconds}s.`
+      });
+      return;
     }
 
-    let mask: Buffer | null = null;
-    if (isMasked) {
-      mask = buffer.subarray(offset, offset + 4);
-      offset += 4;
-    }
-
-    const payload = buffer.subarray(offset, offset + length);
-    if (isMasked && mask) {
-      for (let i = 0; i < payload.length; i++) {
-        payload[i] ^= mask[i % 4];
+    this.readBody(req, res, (raw) => {
+      let code = "";
+      try {
+        const data = JSON.parse(raw);
+        code = typeof data?.code === "string" ? data.code.trim() : "";
+      } catch {
+        this.respond(res, 400, { success: false, message: "Invalid JSON" });
+        return;
       }
-    }
 
-    try {
-      return JSON.parse(payload.toString("utf-8"));
-    } catch {
-      return null;
-    }
+      if (code && this.constantTimeEqual(code, this.pairingCode)) {
+        this.pairAttempts = 0;
+        const token = crypto.randomBytes(32).toString("hex");
+        this.deviceTokens.add(token);
+        this.isPaired = true;
+        // Rotate the PIN so it cannot be replayed.
+        this.pairingCode = this.generatePin();
+        this.emit("paired");
+        this.respond(res, 200, {
+          success: true,
+          token,
+          message: "Paired successfully with SPRYGEN."
+        });
+        return;
+      }
+
+      this.pairAttempts += 1;
+      if (this.pairAttempts >= MAX_PAIR_ATTEMPTS) {
+        this.pairAttempts = 0;
+        this.pairingCode = this.generatePin();
+        this.lockedUntil = Date.now() + LOCKOUT_MS;
+        this.emit("code-regenerated", this.pairingCode);
+        this.respond(res, 429, {
+          success: false,
+          message: "Too many invalid attempts. PIN rotated — check the desktop app."
+        });
+        return;
+      }
+
+      this.respond(res, 401, {
+        success: false,
+        message: `Invalid pairing code. ${MAX_PAIR_ATTEMPTS - this.pairAttempts} attempt(s) left.`
+      });
+    });
   }
 
-  private encodeWebSocketFrame(data: any): Buffer {
-    const jsonStr = JSON.stringify(data);
-    const payload = Buffer.from(jsonStr, "utf-8");
-    const len = payload.length;
-
-    let header: Buffer;
-    if (len < 126) {
-      header = Buffer.from([0x81, len]);
-    } else if (len < 65536) {
-      header = Buffer.alloc(4);
-      header[0] = 0x81;
-      header[1] = 126;
-      header.writeUInt16BE(len, 2);
-    } else {
-      header = Buffer.alloc(10);
-      header[0] = 0x81;
-      header[1] = 127;
-      header.writeBigUInt64BE(BigInt(len), 2);
-    }
-
-    return Buffer.concat([header, payload]);
+  private handleCapture(req: http.IncomingMessage, res: http.ServerResponse): void {
+    this.readBody(req, res, (raw) => {
+      try {
+        const data = JSON.parse(raw);
+        if (typeof data?.text === "string" && data.text.trim()) {
+          const task = dbLayer.insert("tasks", {
+            id: dbLayer.genId(),
+            createdAt: Date.now(),
+            title: data.text.slice(0, 200),
+            dueAt: data.dueAt || null,
+            completed: 0,
+            source: "companion_quick_capture",
+            recurring: null,
+            tags: JSON.stringify(["mobile_capture"])
+          });
+          this.emit("task-created", task);
+          this.respond(res, 200, { success: true, task });
+          return;
+        }
+      } catch {
+        /* fall through to 400 */
+      }
+      this.respond(res, 400, { error: "Invalid payload" });
+    });
   }
 
-  private handleSocketMessage(msg: any, socket: any): void {
+  private handleSocketMessage(msg: any, socket: WebSocket): void {
+    if (!msg || typeof msg !== "object") return;
+
     if (msg.type === "notification") {
       this.emit("notification-received", {
         packageName: msg.packageName || "com.unknown",
@@ -239,29 +303,41 @@ export class DeviceSyncService extends EventEmitter {
         text: msg.text || ""
       });
     } else if (msg.type === "quick_capture") {
-      dbLayer.insert("tasks", {
+      if (typeof msg.text !== "string" || !msg.text.trim()) return;
+      const task = dbLayer.insert("tasks", {
         id: dbLayer.genId(),
         createdAt: Date.now(),
-        title: msg.text,
+        title: msg.text.slice(0, 200),
         dueAt: msg.dueAt || null,
         completed: 0,
         source: "companion_app",
         recurring: null,
         tags: JSON.stringify(["mobile"])
       });
+      this.emit("task-created", task);
     } else if (msg.type === "get_tasks") {
       const tasks = dbLayer.all("tasks");
-      socket.write(this.encodeWebSocketFrame({ type: "tasks_list", tasks }));
+      this.sendTo(socket, { type: "tasks_list", tasks });
+    }
+  }
+
+  private sendTo(socket: WebSocket, payload: unknown): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(JSON.stringify(payload));
+    } catch {
+      this.clients.delete(socket);
     }
   }
 
   public broadcast(event: string, payload: any): void {
-    const frame = this.encodeWebSocketFrame({ type: event, data: payload });
-    for (const s of this.sockets) {
+    const message = JSON.stringify({ type: event, data: payload });
+    for (const socket of this.clients) {
+      if (socket.readyState !== WebSocket.OPEN) continue;
       try {
-        s.write(frame);
+        socket.send(message);
       } catch {
-        this.sockets.delete(s);
+        this.clients.delete(socket);
       }
     }
   }
