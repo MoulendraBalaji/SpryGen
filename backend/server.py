@@ -147,32 +147,36 @@ async def chat(req: ChatRequest):
 
 # ---------------------------------------------------------------------------
 # Automation API — Selenium / BeautifulSoup / PyAutoGUI workflows
+#
+# These handlers are sync `def` (not `async def`) so FastAPI dispatches them to
+# its worker threadpool: the workflows block for seconds and must never stall
+# the event loop. The manager enforces single-flight + real abort.
 # ---------------------------------------------------------------------------
 @app.get("/api/automation/status")
-async def automation_status():
+def automation_status():
     return automation.status()
 
 
 @app.post("/api/automation/abort")
-async def automation_abort():
+def automation_abort():
     automation.request_abort()
     return {"ok": True}
 
 
 @app.post("/api/automation/web-scrape")
-async def automation_scrape(req: ScrapeRequest):
+def automation_scrape(req: ScrapeRequest):
     result = automation.web_scrape(req.url, req.selector, req.headless)
     return _serialize_auth_result(result)
 
 
 @app.post("/api/automation/browser-task")
-async def automation_browser_task(req: BrowserTaskRequest):
+def automation_browser_task(req: BrowserTaskRequest):
     result = automation.browser_task(req.steps, req.headless)
     return _serialize_auth_result(result)
 
 
 @app.post("/api/automation/desktop-action")
-async def automation_desktop_action(req: DesktopActionRequest):
+def automation_desktop_action(req: DesktopActionRequest):
     result = automation.desktop_action(req.command, req.params)
     return _serialize_auth_result(result)
 

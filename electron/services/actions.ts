@@ -3,6 +3,8 @@ import { vectorStore } from "./vectorStore";
 import { profileService } from "./profileService";
 import { uiAutomation } from "./uiAutomation";
 import { screenContext } from "./screenContext";
+import { proxyToPython } from "./pythonClient";
+import { acquireAutomationAbortHotkey, releaseAutomationAbortHotkey } from "./automationKillSwitch";
 import { ProposedAction } from "../../shared/types";
 import * as chrono from "chrono-node";
 
@@ -153,6 +155,42 @@ export async function applyActions(
             outcome.notes.push(`Opened ${target}.`);
           } else {
             outcome.errors.push(result.reason ?? `Could not open ${target}`);
+          }
+          break;
+        }
+        case "scrape_url": {
+          // Route web fetches through the Python endpoint so the SSRF guard and
+          // page-load bounds apply; a bare fetch here would bypass them.
+          const url = String(payload.url ?? "").trim();
+          if (!url) {
+            outcome.errors.push("scrape_url: missing url");
+            break;
+          }
+          acquireAutomationAbortHotkey();
+          try {
+            const res = await proxyToPython<{
+              ok?: boolean;
+              data?: { articles?: string[] };
+              error?: { message?: string } | null;
+            }>(
+              "/api/automation/web-scrape",
+              { method: "POST", body: JSON.stringify({ url, headless: true }) },
+              120_000
+            );
+            if (!res.ok) {
+              outcome.errors.push(`scrape_url: ${res.message}`);
+              break;
+            }
+            if (!res.data?.ok) {
+              outcome.errors.push(`scrape_url: ${res.data?.error?.message ?? "fetch failed"}`);
+              break;
+            }
+            const articles = Array.isArray(res.data.data?.articles) ? res.data.data.articles : [];
+            const text = articles.join("\n\n").slice(0, 4000);
+            outcome.applied.push("scrape_url");
+            outcome.notes.push(text ? `Fetched ${url}:\n${text}` : `Fetched ${url} (no readable text).`);
+          } finally {
+            releaseAutomationAbortHotkey();
           }
           break;
         }

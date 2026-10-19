@@ -14,6 +14,7 @@ import { vectorStore } from "../services/vectorStore";
 import { deviceSync } from "../services/deviceSync";
 import type { AdapterState, AutomationResult, AutomationStatus, OverlayMode, ProposedAction } from "../../shared/types";
 import { proxyToPython } from "../services/pythonClient";
+import { acquireAutomationAbortHotkey, releaseAutomationAbortHotkey } from "../services/automationKillSwitch";
 
 const adapters = new Map<string, any>([
   ["whatsapp-web", whatsappWebAdapter],
@@ -43,6 +44,45 @@ export async function confirmActions(actions: ProposedAction[]): Promise<boolean
     title: "Confirm action",
     message: "SPRYGEN wants to perform an action that changes your system:",
     detail
+  });
+  return res.response === 0;
+}
+
+/** Human-readable description of a desktop control action. */
+function describeDesktopAction(input: { command?: string; params?: Record<string, unknown> }): string {
+  const command = String(input?.command ?? "");
+  const params = input?.params ?? {};
+  switch (command) {
+    case "type":
+      return `Type text: "${String(params.text ?? "").slice(0, 120)}"`;
+    case "hotkey":
+      return `Press keys: ${JSON.stringify(params.keys ?? [])}`;
+    case "click":
+      return `Click at (${params.x ?? 0}, ${params.y ?? 0})`;
+    case "move":
+      return `Move cursor to (${params.x ?? 0}, ${params.y ?? 0})`;
+    case "switch_window":
+      return `Switch window (${JSON.stringify(params.keys ?? ["alt", "tab"])})`;
+    case "screenshot":
+      return "Capture the screen";
+    default:
+      return `Desktop action: ${command}`;
+  }
+}
+
+/** Desktop control is destructive, so it always requires explicit confirmation. */
+async function confirmDesktopAction(input: { command: string; params?: Record<string, unknown> }): Promise<boolean> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  if (!win) return false;
+  const res = await dialog.showMessageBox(win, {
+    type: "warning",
+    buttons: ["Run action", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    title: "Confirm desktop action",
+    message: "SPRYGEN will control your mouse and keyboard:",
+    detail: describeDesktopAction(input)
   });
   return res.response === 0;
 }
@@ -279,6 +319,21 @@ export function registerIpc() {
     error: { code, message }
   });
 
+  // While a workflow runs, a global ESC hotkey is registered as a kill switch.
+  const runAutomationProxy = async (endpoint: string, input: unknown): Promise<AutomationResult> => {
+    acquireAutomationAbortHotkey();
+    try {
+      const res = await proxyToPython<AutomationResult>(
+        endpoint,
+        { method: "POST", body: JSON.stringify(input) },
+        120_000
+      );
+      return res.ok ? res.data : backendFailure(res.code, res.message);
+    } finally {
+      releaseAutomationAbortHotkey();
+    }
+  };
+
   ipcMain.handle("automation:status", async () => {
     const res = await proxyToPython<AutomationStatus>("/api/automation/status");
     return res.ok ? res.data : { active: false, workflow: null, startedAt: null };
@@ -287,29 +342,18 @@ export function registerIpc() {
     const res = await proxyToPython<{ ok: boolean }>("/api/automation/abort", { method: "POST" });
     return res.ok ? res.data : { ok: false };
   });
-  ipcMain.handle("automation:web-scrape", async (_e, input) => {
-    const res = await proxyToPython<AutomationResult>(
-      "/api/automation/web-scrape",
-      { method: "POST", body: JSON.stringify(input) },
-      120_000
-    );
-    return res.ok ? res.data : backendFailure(res.code, res.message);
-  });
-  ipcMain.handle("automation:browser-task", async (_e, input) => {
-    const res = await proxyToPython<AutomationResult>(
-      "/api/automation/browser-task",
-      { method: "POST", body: JSON.stringify(input) },
-      120_000
-    );
-    return res.ok ? res.data : backendFailure(res.code, res.message);
-  });
+  ipcMain.handle("automation:web-scrape", (_e, input) => runAutomationProxy("/api/automation/web-scrape", input));
+  ipcMain.handle("automation:browser-task", (_e, input) => runAutomationProxy("/api/automation/browser-task", input));
   ipcMain.handle("automation:desktop-action", async (_e, input) => {
-    const res = await proxyToPython<AutomationResult>(
-      "/api/automation/desktop-action",
-      { method: "POST", body: JSON.stringify(input) },
-      120_000
-    );
-    return res.ok ? res.data : backendFailure(res.code, res.message);
+    if (!(await confirmDesktopAction(input))) {
+      return {
+        ok: false,
+        data: null,
+        logs: [],
+        error: { code: "CANCELLED", message: "Desktop action cancelled by the user" }
+      } satisfies AutomationResult;
+    }
+    return runAutomationProxy("/api/automation/desktop-action", input);
   });
 
   return {
