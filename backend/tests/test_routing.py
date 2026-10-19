@@ -65,13 +65,12 @@ def test_add_milk_to_shopping_list_creates_task(monkeypatch):
         actions = r["actions"] or []
         assert actions
         assert actions[0]["type"] == "task.create"
-        payload = actions[0]["payload"]
-        assert payload.get("title") == "buy milk" or "buy milk" in str(payload)
+        assert actions[0]["payload"]["title"] == "buy milk"
 
     asyncio.run(run_case())
 
 
-def test_remember_locker_code_creates_memory(monkeypatch):
+def test_remember_locker_code_creates_memory():
     # Anchored fast-path — no provider call needed.
     async def run_case():
         r = await router.route({"text": "remember that my locker code is 4821", "profile": {}, "tasks": [], "facts": []})
