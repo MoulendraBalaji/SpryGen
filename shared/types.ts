@@ -105,9 +105,17 @@ export interface VoiceStatus {
   state: VoiceState;
   enrolled: boolean;
   active: boolean;
-  /** Whether the local Python voice engine (capture + speaker model) is available. */
+  /**
+   * Whether the local Python voice engine has everything the wake → reply loop
+   * needs (microphone capture, wake word and speech-to-text). TTS is optional
+   * because the OS synthesizer is used as a fallback.
+   */
   engineAvailable: boolean;
   speakerSimilarityThreshold: number;
+  /** Per-component availability reported by the Python voice engine. */
+  components?: Record<string, boolean>;
+  /** Component keys that are not installed (e.g. ["wake", "stt", "tts"]). */
+  missingComponents?: string[];
 }
 
 export interface VoiceEnrollmentProgress {

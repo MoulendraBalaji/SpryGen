@@ -188,9 +188,44 @@ export function ProfileSettings() {
             aria-label="Toggle automatic voice listening"
           />
         </div>
+
+        <div className="console-row" style={{ marginTop: 14, justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 12 }}>Speak replies aloud</div>
+            <div className="console-meta">
+              Speech-to-speech: answers to voice commands are read back with local TTS.
+            </div>
+          </div>
+          <ClayToggle
+            on={voice.speakReplies}
+            onChange={() => voice.setSpeakReplies(!voice.speakReplies)}
+            aria-label="Toggle speaking replies aloud"
+          />
+        </div>
+
+        {voiceStatus?.components && (
+          <div className="console-meta" data-testid="voice-components" style={{ margin: "10px 0 0" }}>
+            engine:{" "}
+            {Object.entries(voiceStatus.components).map(([name, ready]) => (
+              <span key={name} style={{ marginRight: 8, opacity: ready ? 1 : 0.5 }}>
+                {ready ? "●" : "○"} {name}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {voiceStatus?.missingComponents && voiceStatus.missingComponents.length > 0 && (
+          <p className="console-meta" style={{ margin: "6px 0 0" }} data-testid="voice-missing">
+            Missing: {voiceStatus.missingComponents.join(", ")} — install the offline voice
+            stack with <code>pip install -r backend/requirements-voice.txt</code>, then
+            restart the loop.
+          </p>
+        )}
+
         <p className="console-meta" style={{ margin: "8px 0 0" }}>
           Loop on → SPRYGEN listens continuously for its wake word. Loop off → listening is
-          fully manual.
+          fully manual. The bundled openWakeWord phrase is used unless
+          <code> SPRYGEN_WAKE_MODEL </code>points at a custom model.
         </p>
       </ClayCard>
 

@@ -60,6 +60,8 @@ export function makeBridge(): any {
         active: false,
         engineAvailable: false,
         speakerSimilarityThreshold: 0.85,
+        components: { capture: false, wake: false, stt: false, speaker: false, tts: false },
+        missingComponents: ["capture", "wake", "stt", "speaker", "tts"],
       })),
       speak: vi.fn(async () => true),
     },

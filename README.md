@@ -1,336 +1,472 @@
-# 🌀 SPRYGEN — Voice-Commanded, Automation-Ready AI Desktop Assistant
+<div align="center">
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Electron-31.x-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron" />
-  <img src="https://img.shields.io/badge/React-18.x-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Vite-5.x-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/Expo-51.x-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo" />
-  <img src="https://img.shields.io/badge/SQLite-WAL_Mode-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
-</p>
+# SPRYGEN
 
----
+### Your voice, your machine, your automation layer.
 
-## 🌟 Overview
+A local-first desktop assistant that hears you, understands you, and does the work —<br />
+running entirely on your own hardware.
 
-**SPRYGEN** is a local-first, biometric-commanded personal desktop assistant engineered with **Electron, React 18, TypeScript, and a tactical Opera GX + Arc Reactor design system**. It pairs real browser/desktop automation (Selenium, PyAutoGUI, BeautifulSoup) with a keyless hybrid Groq/Cerebras/OpenRouter/Mistral/Ollama LLM chain, a fully-local offline voice pipeline, semantic memory, and local-first storage — all while running silent and unobtrusive during gaming or deep-work sessions.
+<br />
 
----
+[![CI](https://img.shields.io/github/actions/workflow/status/MoulendraBalaji/SpryGen/ci.yml?style=for-the-badge&label=CI&logo=githubactions&logoColor=white)](https://github.com/MoulendraBalaji/SpryGen/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-3fb950?style=for-the-badge)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-0078D6?style=for-the-badge)](#-installation)
 
-## ⚡ Key Highlights
+[![Electron](https://img.shields.io/badge/Electron-31-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-sidecar-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org/)
+[![Expo](https://img.shields.io/badge/Expo-51-000020?style=flat-square&logo=expo&logoColor=white)](https://expo.dev/)
+[![Tests](https://img.shields.io/badge/tests-vitest%20%2B%20pytest%20%2B%20playwright-6E4AFF?style=flat-square)](#-testing--quality)
 
-### 🎙️ 1. Voice-Commanded Biometric Access
-* **Wake Word (openWakeWord)**: fully offline wake-phrase listener — no access key, no cloud.
-* **Local Speaker Verification (Resemblyzer)**: enrollment records real audio, computes a 256-dimensional speaker embedding, and stores the averaged voiceprint locally. A cosine-similarity comparison against a fresh recording forms the speaker lock. If the local models are missing the lock **fails closed** (nothing is ever verified).
-* **Privacy-First**: audio capture, speaker embeddings, transcription (faster-whisper) and speech synthesis (Kokoro) all run on your machine. No raw audio ever leaves your computer.
-* **Local TTS with native fallback**: Kokoro renders replies offline; the OS synthesizer steps in automatically only if the local engine is unavailable.
-* ⚠️ **The speaker lock is not a strong security boundary.** It can be fooled by a recording (replay attack) or a synthetic/cloned copy of your voice, so treat it as a convenience gate, not authentication for sensitive data.
+<br />
 
-### 🪟 2. Invisible Overlay & Smart Distraction Shield
-* **Global Hotkey Summon**: Press `CmdOrCtrl + Shift + Space` (or `Alt + J`) to instantly bring up the floating assistant overlay.
-* **DND & Fullscreen Suppression**: Automatically detects fullscreen games, videos, or scheduled quiet hours. Intrusive notifications are buffered in a local backlog queue and delivered when you return.
-* **System Tray Resident**: Quick menu actions for toggling listening, opening settings, or running quick captures.
+**[Why SPRYGEN](#-why-sprygen)** · **[Features](#-feature-tour)** · **[Installation](#-installation)** · **[Configuration](#-configuration)** · **[Testing](#-testing--quality)** · **[Privacy](#-privacy--security)**
 
-### 🔌 3. Multi-Source Ingest Adapters
-* 💬 **WhatsApp Web Extraction**: Intelligent text parsing for homework announcements and assignment deadlines.
-* 📱 **Mobile Notification Mirror**: Real-time WebSocket connection to mirror mobile alerts from Android/iOS.
-* 📋 **Global Clipboard Quick Capture (`CmdOrCtrl + Shift + J`)**: Highlight text anywhere on your OS to automatically extract dates and actions via `chrono-node`.
-* 🩺 **Integrations Health Monitor**: Live telemetry displaying connection status and one-click re-authorization for all wired services.
-
-### 🤖 4. Automation Engine & Agent Capabilities
-* **Browser Automation (Selenium + BeautifulSoup)**: Multi-step browser tasks (navigate, click, type, extract, screenshot) with an operator **Kill Switch**, plus a dedicated **Web Scraper** panel.
-* **Web Scraping is a native agent tool**: ask the assistant to "scrape/summarize/analyze `<url>`" and SPRYGEN fetches the page, extracts clean text, and reasons over it with the LLM.
-* **Desktop Actions (PyAutoGUI)**: Screenshot, type, hotkeys, bounded mouse moves and clicks — all running with `FAILSAFE=True` and an abort flag.
-* **Hybrid LLM routing**: Groq → Cerebras → OpenRouter → Mistral → local Ollama → deterministic fast-path rules. Providers without a key are skipped; a keyless install runs entirely on Ollama.
-
-### 🧠 5. Hybrid NLP & Encrypted Persistent Memory
-* **Multi-Tiered Query Engine**:
-  1. Instant regex entity extraction and natural language date parsing (`chrono-node`).
-  2. Anchored fast-path rules for explicit commands (`remind me to …`, `todo: …`, `remember that …`).
-  3. Free-tier cloud LLMs (Groq, Cerebras, OpenRouter, Mistral) for complex reasoning.
-  4. Local Ollama LLM for offline/privacy-sensitive prompts.
-* **Privacy gate**: prompts classified as personal (memory, passwords, schedules, screen/voice payloads) are forced onto a local provider and never sent to a cloud model.
-* **Local RAG Vector Store**: 64-dimensional semantic text embeddings with cosine search for instant recall of facts, notes, and past tasks.
-
-### 📱 6. Mobile Companion App
-* Built on **React Native (Expo 51)**.
-* Fast local LAN pairing over port `8765` using secure 6-digit PIN handshake.
-* On-device notification listener and mobile task capture.
-
-### 🎨 7. Opera GX + Arc Reactor Design System
-* Frameless **Opera GX** titlebar, tactical monospace dark shell, keyboard-first command palette (`Ctrl+K`), and a multi-ring **Arc Reactor HUD** that surfaces engine state (`idle`, `listening`, `processing`, `automating`, `error`).
+</div>
 
 ---
 
-## ✅ Implemented vs. Planned
+## ✨ Why SPRYGEN
 
-Everything below is implemented in this repository and covered by the automated
-acceptance suite; anything not listed is **not** claimed.
+Most assistants send your voice, your screen and your notes to somebody else's server.
+SPRYGEN was built the other way around.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🔒 Private by architecture**
+
+Wake word, speech recognition, speaker identity and text-to-speech all run on your
+machine. Personal prompts are routed to a local model and never leave the device —
+only non-personal prompts may use an optional cloud provider you configured.
+
+</td>
+<td width="50%" valign="top">
+
+**⌨️ No account, no API key required**
+
+Out of the box SPRYGEN works fully offline against [Ollama](https://ollama.com/).
+Cloud providers are strictly opt-in fallbacks. There is nothing to sign up for and
+nothing that breaks when a free tier disappears.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**🤖 It actually does things**
+
+Real browser and desktop automation — navigate, click, type, scrape, take
+screenshots — behind a single-flight engine with a live kill switch and a
+confirmation prompt for anything that changes your system.
+
+</td>
+<td width="50%" valign="top">
+
+**🧪 Verified, not claimed**
+
+Every capability is backed by an automated check: typed IPC, Python security tests,
+Vitest component tests and a Playwright test that boots the real app, chats, creates
+a task and restarts to prove persistence.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 Feature Tour
+
+### 🎙️ Speech-to-speech, entirely on-device
+
+Ask by voice, hear the answer back — no cloud round-trip at any step.
+
+| Stage | Engine | Runs on |
+| :--- | :--- | :--- |
+| Wake word | `openWakeWord` | Your machine |
+| Speech → text | `faster-whisper` | Your machine |
+| Speaker identity | `Resemblyzer` | Your machine |
+| Text → speech | `Kokoro`, with OS voice fallback | Your machine |
+
+Say the wake phrase, speak your command, and SPRYGEN routes the transcript through
+the exact same pipeline as typed input — tasks get created, memories get stored,
+automation gets queued — then reads the answer back aloud. Prefer it quiet?
+Turn off **Speak replies aloud** in Settings.
+
+> **About the voice lock.** The speaker gate compares a live recording against your
+> enrolled voiceprint. It is a convenience feature, **not** an authentication
+> boundary: a replay recording or a cloned voice can fool it. When the local models
+> are missing it fails *closed* — nothing is ever verified.
+
+### 🪟 An overlay that knows when to disappear
+
+- **Summon instantly** with `CmdOrCtrl + Shift + Space` (or `Alt + J`).
+- **Distraction shield**: detects fullscreen games and videos, honours quiet hours,
+  and buffers what it would have shown you into a local backlog.
+- **Tray resident**: toggle listening, open settings, or fire a quick capture
+  without leaving the keyboard.
+
+### 🔌 Feeds from everywhere you already work
+
+| Adapter | What it does |
+| :--- | :--- |
+| **WhatsApp Web** | Parses group announcements into dated tasks. |
+| **Mobile mirror** | Streams phone notifications over your LAN. |
+| **Clipboard capture** | `CmdOrCtrl + Shift + J` turns selected text into a task with a parsed due date. |
+| **Health monitor** | Live status for every provider, adapter and service, with one-click re-authorisation. |
+
+### 🤖 Automation with a seatbelt
+
+- **Browser tasks**: multi-step navigate / click / type / extract / screenshot.
+- **Web scraping as a tool**: ask the assistant to *"summarise this page"* and it
+  fetches, cleans and reasons over the content.
+- **Desktop actions**: screenshots, typing, hotkeys and bounded mouse control.
+- **Guard rails**: SSRF blocking, single-flight execution, a global kill switch and
+  an explicit confirmation dialog before any side-effecting action.
+
+### 🧠 Routing that respects your privacy
+
+```
+explicit command ─▶ anchored fast-path rules        (instant, deterministic)
+otherwise        ─▶ LLM tool-calling (tools-capable provider)
+otherwise        ─▶ plain chat (any available provider)
+
+         ┌──────────────────────────────────────────────┐
+chain ─▶ │ Groq → Cerebras → OpenRouter → Mistral → Ollama │
+         └──────────────────────────────────────────────┘
+              keyless providers are skipped automatically
+              personal data ⇒ local provider, always
+```
+
+### 📱 Companion app
+
+A React Native (Expo) app pairs over your local network with a 6-digit PIN that
+exchanges per-device tokens — quick capture from your phone, notification relay back
+to the desktop, no cloud relay in between.
+
+### 🎨 An interface you'll actually enjoy
+
+A frameless **Opera GX** shell, tactical monospace typography, a keyboard-first
+command palette (`Ctrl + K`), and an **Arc Reactor HUD** that tells you at a glance
+whether the engine is `idle`, `listening`, `processing`, `automating` or in `error`.
+
+---
+
+## ✅ Implemented vs. planned
+
+Everything below is implemented and covered by the acceptance suite. Anything not
+listed is **not** claimed.
 
 | Area | Status |
-| --- | --- |
-| Electron + React desktop shell, Arc Reactor HUD, command palette, overlay/DND | ✅ Implemented |
-| SQLite (better-sqlite3) as the single datastore; in-memory emergency fallback | ✅ Implemented |
-| Stateless Python FastAPI sidecar (`/api/chat` → `{answer, intent, actions}`) | ✅ Implemented |
-| Keyless provider chain (Groq/Cerebras/OpenRouter/Mistral → Ollama) with cooldowns, `Retry-After`, privacy gate | ✅ Implemented |
-| Anchored fast-path + LLM tool-calling; side-effecting actions require UI confirmation | ✅ Implemented |
+| :--- | :--- |
+| Electron + React shell, Arc Reactor HUD, command palette, overlay & DND | ✅ Implemented |
+| SQLite (`better-sqlite3`) as the single datastore; in-memory emergency fallback | ✅ Implemented |
+| Stateless Python FastAPI sidecar — `/api/chat` → `{ answer, intent, actions }` | ✅ Implemented |
+| Keyless provider chain with cooldowns, `Retry-After` handling and a privacy gate | ✅ Implemented |
+| Anchored fast-path + LLM tool-calling; side-effecting actions require confirmation | ✅ Implemented |
 | Per-launch token, random port, Host/Origin checks, SSRF guards, single-flight automation, ESC kill switch | ✅ Implemented |
-| LAN sync server: `/status` (no secrets), `/pair` per-device token, `/capture`, 64 KB body cap, PIN lockout | ✅ Implemented |
-| Local voice pipeline (openWakeWord, faster-whisper, Resemblyzer, Kokoro) with fail-closed speaker lock | ✅ Implemented (optional ML deps) |
+| LAN sync: `/status` (no secrets), `/pair` per-device tokens, `/capture`, 64 KB cap, PIN lockout | ✅ Implemented |
+| Local voice pipeline (wake word → STT → speaker lock → TTS) with fail-closed behaviour | ✅ Implemented <br /><sub>optional ML extra</sub> |
+| Speech-to-speech loop: voice command → chat → spoken answer | ✅ Implemented |
 | Screen understanding via `desktopCapturer` + local Ollama vision | ✅ Implemented |
 | Expo companion app (pairing, quick capture, notification relay) | ✅ Implemented |
-| Cross-platform installers / notarized macOS builds | ⚠️ Partially verified — CI builds on Windows/Linux; macOS packaging is configured but not exercised in CI |
-| Multi-user accounts / cloud sync / mobile push | ❌ Not planned |
+| Cross-platform installers | ⚠️ Partially verified — CI builds on Windows and Linux; macOS packaging is configured but not exercised in CI |
+| Multi-user accounts, cloud sync, mobile push | ❌ Not planned |
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Mobile["📱 Mobile Companion (Expo / React Native)"]
-        MC_UI[Quick Capture UI]
-        MC_Notif[Notification Listener]
-        MC_WS[LAN WebSocket Client]
+    subgraph Mobile["📱 Companion (Expo / React Native)"]
+        MC_UI[Quick capture]
+        MC_Notif[Notification listener]
+        MC_WS[LAN client]
     end
 
-    subgraph Desktop["💻 SPRYGEN Desktop (Electron + Vite)"]
-        subgraph Core["Main Process & Background Services"]
-            Voice[🎙️ Local Voice Engine (Python sidecar)]
-            Overlay[🪟 Overlay & DND Manager]
-            Router[🧠 Hybrid NLP Router]
-            Python[🐍 Python FastAPI Backend]
-            Auto[🤖 Automation Engine]
-            SyncServer[📡 Sync Server :8765]
-            DB[(🗄️ SQLite / JSON Store)]
+    subgraph Desktop["💻 SPRYGEN Desktop"]
+        subgraph Core["Main process & services"]
+            Voice[🎙️ Python voice engine]
+            Overlay[🪟 Overlay & DND]
+            Python[🐍 FastAPI sidecar]
+            Auto[🤖 Automation engine]
+            SyncServer[📡 Sync server]
+            DB[(🗄️ SQLite)]
         end
 
-        subgraph Adapters["Ingest Adapters"]
+        subgraph Adapters["Ingest adapters"]
             WA[WhatsApp Web]
-            Mirror[Notification Mirror]
-            Manual[Clipboard Capture]
+            Mirror[Notification mirror]
+            Manual[Clipboard capture]
         end
 
-        subgraph Renderer["🎨 UI Renderer (React 18 + Opera GX)"]
+        subgraph Renderer["🎨 Renderer (React 18)"]
             HUD[Arc Reactor HUD]
-            Briefing[Daily Briefing]
-            Board[Task Board]
-            Chat[Interactive Chat]
-            Health[Integrations Health]
-            Automation[Automation Panel]
+            Briefing[Daily briefing]
+            Board[Task board]
+            Chat[Chat & voice loop]
+            Health[Integrations health]
+            Automation[Automation panel]
         end
     end
 
     MC_Notif --> MC_WS
     MC_UI --> MC_WS
-    MC_WS <-->|LAN Sync & Pairing| SyncServer
+    MC_WS <-->|LAN sync| SyncServer
 
     Adapters --> DB
-    Core <-->|IPC Bridge| Renderer
-    Core <--> Python
+    Core <-->|typed IPC| Renderer
+    Core <-->|token + localhost| Python
     Python --> Auto
 ```
 
+**Design rules that the codebase holds itself to**
+
+- The Electron renderer never guesses: if the preload bridge is missing, the app
+  shows a blocking error screen instead of fake data.
+- The Python backend is stateless. It returns intent and proposed actions; the
+  desktop applies each action exactly once.
+- Everything security-relevant fails closed, and every fallback is explicit.
+
 ---
 
-## 🚀 Getting Started
+## 📦 Installation
 
-### Prerequisites
-* **Node.js**: v18.0.0 or higher (v20+ recommended)
-* **npm**: v9.0.0 or higher
-* **Git**
+**Prerequisites**
 
-### 1. Installation
+- Node.js **18+** (20+ recommended) and npm **9+**
+- Python **3.11+**
+- Git
 
 ```bash
-# Clone the repository
+# 1 — clone
 git clone https://github.com/MoulendraBalaji/SpryGen.git
 cd SpryGen
 
-# Install Desktop dependencies
+# 2 — desktop dependencies
 npm install
 
-# Install Mobile Companion dependencies
-cd companion-app
-npm install
-cd ..
+# 3 — Python backend dependencies
+pip install -r backend/requirements.txt
+
+# 4 — optional: the offline voice stack (wake word, STT, speaker lock, TTS)
+pip install -r backend/requirements-voice.txt
+
+# 5 — optional: companion app
+cd companion-app && npm install && cd ..
 ```
 
----
-
-### 2. Development Mode
+### Run it
 
 ```bash
-# Start the Desktop app with Hot Reloading (Vite + Electron)
 npm run dev
 ```
 
-To run the Mobile Companion app:
+That starts Vite, Electron and the Python sidecar together. Prefer a local model
+first? Install [Ollama](https://ollama.com/) and pull one:
+
 ```bash
-cd companion-app
-npm run start
+ollama pull llama3.2
 ```
+
+### Build it
+
+```bash
+npm run typecheck       # TypeScript, no emit
+npm run build           # production bundles
+npm run package:win     # or package:mac / package:linux
+```
+
+Installers land in `release/`.
 
 ---
 
-### 3. Production Build & Packaging
+## ⚙️ Configuration
+
+SPRYGEN works with an empty `.env`. Copy the example to get started:
 
 ```bash
-# Check TypeScript types
-npm run typecheck
-
-# Build Desktop production bundle
-npm run build
-
-# Package standalone installers
-npm run package:win     # Windows (.exe installer & portable)
-npm run package:mac     # macOS (.dmg / .zip)
-npm run package:linux   # Linux (.AppImage / .deb)
+cp .env.example .env
 ```
 
-Packaged installers and executables will be generated in the `release/` directory.
+```env
+# --- Optional cloud providers (all free-tier; leave blank to stay local) ---
+GROQ_API_KEY=""
+CEREBRAS_API_KEY=""
+OPENROUTER_API_KEY=""
+MISTRAL_API_KEY=""
 
----
+# --- Local model endpoint (no key required) ---
+SPRYGEN_OLLAMA_URL="http://127.0.0.1:11434"
 
-## ⌨️ Global Hotkeys
+# --- Offline voice pipeline (optional; see backend/requirements-voice.txt) ---
+# SPRYGEN_WAKE_MODEL=""            # custom openWakeWord .onnx; blank = bundled model
+# SPRYGEN_WHISPER_MODEL="base.en"  # faster-whisper model size
+# SPRYGEN_TTS_VOICE="af_heart"     # Kokoro voice
+# SPRYGEN_VISION_MODEL="llava"     # local vision model for screen understanding
+
+# --- LAN sync ---
+SPRYGEN_SYNC_PORT=8765
+```
+
+### Providers
+
+You never *need* a key. With every key blank SPRYGEN runs entirely on Ollama. The
+cloud providers below are optional fallbacks, all with free tiers at the time of
+writing:
+
+| Provider | Key | Notes |
+| :--- | :--- | :--- |
+| **Ollama** | none | Local, offline, no account. The default. |
+| **Groq** | `GROQ_API_KEY` | Very fast inference; rate-limited free tier. |
+| **Cerebras** | `CEREBRAS_API_KEY` | Free tier; rate-limited. |
+| **OpenRouter** | `OPENROUTER_API_KEY` | Use the `:free` model variants. |
+| **Mistral** | `MISTRAL_API_KEY` | Free experimentation tier. |
+
+> Free tiers, model names and rate limits change often. Check each provider's
+> pricing page before relying on them. Model configuration lives in
+> `backend/providers.json` — updating a model name needs no code change.
+
+### Global hotkeys
 
 | Shortcut | Action | Scope |
 | :--- | :--- | :--- |
-| `CmdOrCtrl + Shift + Space` | Summon / Hide SPRYGEN Overlay | System-wide |
-| `Alt + J` | Alternative Toggle Overlay | System-wide |
-| `CmdOrCtrl + Shift + J` | Quick Capture Selected Text to Task | System-wide |
+| `CmdOrCtrl + Shift + Space` | Summon / hide the overlay | System-wide |
+| `Alt + J` | Alternative overlay toggle | System-wide |
+| `CmdOrCtrl + Shift + J` | Quick-capture selected text as a task | System-wide |
+| `Esc` | Kill switch while automation runs | System-wide |
+
+### Voice setup
+
+1. Install the optional stack: `pip install -r backend/requirements-voice.txt`.
+2. Open **Settings → Voice & Audio** and press **Enroll Voiceprint** (5 short samples).
+3. Flip **Automatic listening** on and say the wake phrase.
+4. Use **Test Speech (TTS)** to confirm audio output; toggle **Speak replies aloud**
+   to control whether answers are read back.
+
+Settings shows a live per-component readout (capture · wake · stt · speaker · tts) so
+you always know exactly what is installed and what is missing.
 
 ---
 
-## ⚙️ Environment Configuration
+## 🧪 Testing & Quality
 
-Create a `.env` file in the root directory (see [`.env.example`](file:///.env.example)):
-
-```env
-# AI & LLM Services (all optional — SPRYGEN runs fully offline via Ollama)
-GROQ_API_KEY=""                     # Groq (free tier) - fast cloud fallback
-CEREBRAS_API_KEY=""                 # Cerebras (free tier)
-OPENROUTER_API_KEY=""               # OpenRouter (use :free models)
-MISTRAL_API_KEY=""                  # Mistral (free tier)
-SPRYGEN_OLLAMA_URL="http://127.0.0.1:11434" # Local Ollama endpoint (no key)
-
-# Local voice pipeline (optional, no API keys - see backend/requirements-voice.txt)
-# SPRYGEN_WAKE_MODEL=""             # Path to a custom openWakeWord model (.onnx); blank = bundled default
-# SPRYGEN_WHISPER_MODEL="base.en"   # faster-whisper model size
-# SPRYGEN_TTS_VOICE="af_heart"      # Kokoro voice
-# SPRYGEN_VISION_MODEL="llava"      # Ollama vision model for screen understanding
-
-# Device Sync Server
-SPRYGEN_SYNC_PORT=8765              # WebSocket sync port for mobile companion app
-```
-
-### Free providers
-
-You do **not** need any API key: with every key blank, SPRYGEN runs fully offline
-against a local [Ollama](https://ollama.com/) server. The optional cloud
-providers all have free tiers at the time of writing:
-
-| Provider | Free tier | Notes |
-| --- | --- | --- |
-| Groq | Yes | Fast inference; rate-limited free tier. |
-| Cerebras | Yes | Free tier; rate-limited. |
-| OpenRouter | Yes | Use the `:free` model variants. |
-| Mistral | Yes | Free experimentation tier. |
-| Ollama | N/A (local) | No key, no account, works offline. |
-
-> Free tiers, model names and rate limits change often — check each provider's
-> pricing page before relying on them. Provider/model configuration lives in
-> `backend/providers.json`; no code change is needed to update a model name.
-
----
-
-## 🧪 Tests & Acceptance
-
-Every phase has an automated check. Run the whole suite with one command:
+One command runs the whole acceptance suite, in order, and prints `PASS`/`FAIL` for
+every phase — stopping at the first failure:
 
 ```bash
-# Linux / macOS (Git Bash on Windows)
-bash scripts/acceptance.sh
+bash scripts/acceptance.sh        # Linux / macOS / Git Bash
 
-# Windows (PowerShell)
-./scripts/acceptance.ps1
+./scripts/acceptance.ps1          # Windows PowerShell
 ```
 
-The script runs, in order, and prints `PASS`/`FAIL` for phases 1–8:
+| Step | Command | Covers |
+| :--- | :--- | :--- |
+| 1 | `npm run typecheck` | Typed IPC surface, datastore rules |
+| 2 | `npm run build` | Shared zod schemas, renderer + main bundles |
+| 3 | `pytest backend/tests` | Routing, provider fallback, trust boundary, SSRF, sync-server security, voice/vision fail-closed |
+| 4 | `npm run test` | Vitest — stores, speech-to-speech loop, health panel, bridge error screen |
+| 5 | `npm run test:e2e` | Playwright boots the real Electron app against a mock model, chats, creates a task, restarts, verifies SQLite persistence |
 
-1. `npm run typecheck` — typed IPC surface / datastore
-2. `npm run build` — shared schemas + renderer/main bundles
-3. `pytest backend/tests` — routing, provider fallback, trust boundary, SSRF,
-   sync-server security, voice/vision fail-closed
-4. `npm run test` — Vitest (stores, health panel, bridge error screen)
-5. `npm run test:e2e` — Playwright `_electron` smoke test (starts the real app
-   against a mock OpenAI-compatible model, creates a task, restarts, verifies
-   SQLite persistence)
-
-CI runs the same acceptance script on `ubuntu-latest` and `windows-latest` for
-every push and pull request (`.github/workflows/ci.yml`). Release builds depend
-on that workflow passing.
+CI runs the identical script on **ubuntu-latest** and **windows-latest** for every
+push and pull request (`.github/workflows/ci.yml`), and release builds depend on it
+passing.
 
 ---
 
-## 📁 Repository Structure
+## 📁 Repository layout
 
 ```
 SpryGen/
-├── electron/                   # Electron Main & Preload Processes
-│   ├── ipc/                    # Type-Safe IPC Channel Registrations
-│   ├── services/               # Background Services & Ingest Adapters
-│   │   ├── adapters/           # WhatsApp, Notification Ingest
-│   │   ├── voice/              # Thin client over the local Python voice engine
-│   │   ├── db.ts               # SQLite (better-sqlite3) + in-memory emergency fallback
-│   │   ├── deviceSync.ts       # LAN pairing + capture server
-│   │   ├── overlay.ts          # Window State Machine & DND Manager
-│   │   └── pythonClient.ts     # Typed proxy to the Python sidecar
-│   ├── main.ts                 # Main Process Entry Point
-│   └── preload.ts              # CommonJS Context Bridge Preload
-├── src/                        # React 18 Renderer Process
-│   ├── components/             # Opera GX Shell, HUD, Panels
-│   ├── design-system/          # Clay Tokens, Buttons, Inputs, Cards
-│   ├── lib/                    # Typed bridge access (no mock/fake fallback)
-│   ├── store/                  # Zustand Global State Stores
-│   ├── App.tsx                 # Core Dashboard Shell
-│   └── main.tsx                # React Mount with Error Boundary
-├── backend/                    # Python FastAPI, stateless sidecar
-│   ├── agents/                 # Chat / Task / Memory / Briefing agents
-│   ├── llm/                    # Intent router + provider chain
-│   ├── services/automation/    # Selenium + PyAutoGUI + BeautifulSoup
-│   ├── services/voice/         # Local voice pipeline (fail-closed)
-│   ├── services/vision.py      # Screen → local Ollama vision
-│   └── server.py               # FastAPI app (dynamic port + launch token)
-├── companion-app/              # React Native (Expo) Mobile Companion
-├── shared/                     # Shared TypeScript types + zod IPC schemas
+├── electron/                   # Main process & preload
+│   ├── ipc/                    #   typed IPC channel registration
+│   ├── services/
+│   │   ├── adapters/           #   WhatsApp / notification ingest
+│   │   ├── voice/              #   thin client over the Python voice engine
+│   │   ├── db.ts               #   SQLite (+ in-memory emergency fallback)
+│   │   ├── deviceSync.ts       #   LAN pairing & capture server
+│   │   ├── overlay.ts          #   window state machine & DND
+│   │   └── pythonClient.ts     #   typed proxy to the sidecar
+│   ├── main.ts
+│   └── preload.ts
+├── src/                        # React renderer
+│   ├── components/             #   shell, HUD, panels
+│   ├── design-system/          #   clay tokens, buttons, inputs, cards
+│   ├── lib/                    #   typed bridge access + speech-to-speech loop
+│   ├── store/                  #   zustand stores
+│   ├── App.tsx
+│   └── main.tsx
+├── backend/                    # Python FastAPI sidecar (stateless)
+│   ├── agents/                 #   chat / task / memory / briefing agents
+│   ├── llm/                    #   intent router + provider chain
+│   ├── services/automation/    #   Selenium + PyAutoGUI + BeautifulSoup
+│   ├── services/voice/         #   offline voice pipeline (fail-closed)
+│   ├── services/vision.py      #   screen → local vision
+│   └── server.py               #   dynamic port + launch token
+├── companion-app/              # Expo companion
+├── shared/                     # shared types + zod IPC schemas
 ├── tests/                      # Vitest unit tests + Playwright e2e
-├── scripts/                    # Acceptance runners + security check helper
-├── electron-builder.yml        # Multi-Platform Packaging Specs
-├── electron.vite.config.ts     # Electron-Vite Bundler Configuration
-├── tsconfig.json               # Root TypeScript Configuration
-└── package.json                # Project Manifest
+├── scripts/                    # acceptance runners + security checks
+├── electron-builder.yml
+├── electron.vite.config.ts
+└── package.json
 ```
 
 ---
 
 ## 🛡️ Privacy & Security
 
-* **Local Storage**: All tasks, history, notes, and biometric embeddings are saved in a local SQLite database on your device.
-* **Biometric Protection**: Speaker voiceprints are stored as numeric vectors without retaining raw audio files.
-* **Not authentication**: the speaker lock is a convenience gate. It can be fooled by a replay recording or a synthetic/cloned voice, so do not use it to protect secrets on a shared machine. When the local models are missing it fails closed (nothing is verified).
-* **Local LAN Communication**: Device synchronization between your desktop and mobile companion runs over your local network with per-device tokens issued by a PIN handshake. `/status` on the LAN never exposes the pairing code or tokens.
-* **Prompt privacy**: personal-data and screen/voice prompts are forced onto a local provider; only non-personal prompts may use a configured cloud provider.
+Security decisions, stated plainly:
+
+- **Local storage.** Tasks, chat history, notes and biometric embeddings live in a
+  local SQLite database. Nothing syncs to a server.
+- **No raw audio retained.** Enrollment stores a numeric speaker vector, never the
+  recording.
+- **The speaker lock is not authentication.** It can be defeated by a replay or a
+  cloned voice. It fails closed when models are missing, but it should never guard
+  sensitive material on a shared machine.
+- **Prompt privacy.** Prompts classified as personal — memories, credentials,
+  schedules, screen and voice payloads — are forced onto a local provider. Cloud
+  providers only ever see non-personal prompts, and only if you configured a key.
+- **Local-only network surface.** The sidecar binds `127.0.0.1` on a random port with
+  a per-launch bearer token, validates `Host` and `Origin`, and ships no CORS
+  middleware. LAN sync issues per-device tokens via PIN handshake and never exposes
+  the pairing code on `/status`.
+- **Automation guard rails.** Scraping is behind an SSRF allowlist, workflows run
+  single-flight with real aborts, and side-effecting actions ask first.
+
+Licenses for every bundled model and library — including the full voice stack — are
+listed in [`THIRD_PARTY.md`](./THIRD_PARTY.md).
+
+---
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Before opening a PR, please run:
+
+```bash
+bash scripts/acceptance.sh   # or ./scripts/acceptance.ps1 on Windows
+```
+
+and make sure every phase reports `PASS`.
 
 ---
 
 ## 📄 License
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+Released under the **MIT License** — see [`LICENSE`](./LICENSE).
 
----
+<div align="center">
+<br />
 
-<p align="center">
-  Crafted by <b>Moulendra Balaji</b>
-</p>
+**SPRYGEN** — built by [Moulendra Balaji](https://github.com/MoulendraBalaji)
+
+<sub>Your voice never leaves your machine.</sub>
+
+</div>

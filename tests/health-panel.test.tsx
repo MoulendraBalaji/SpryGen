@@ -83,6 +83,8 @@ describe("health panel and provider/voice surfacing", () => {
       active: false,
       engineAvailable: false,
       speakerSimilarityThreshold: 0.85,
+      components: { capture: true, wake: false, stt: false, speaker: false, tts: false },
+      missingComponents: ["wake", "stt", "speaker", "tts"],
     });
     bridge.sync.getStatus.mockResolvedValue({
       paired: false,
@@ -98,5 +100,33 @@ describe("health panel and provider/voice surfacing", () => {
     await waitFor(() => expect(screen.getByTestId("voice-engine-status")).toBeInTheDocument());
     expect(screen.getByTestId("voice-engine-status")).toHaveTextContent("state: listening");
     expect(screen.getByTestId("voice-engine-status")).toHaveTextContent("voice engine unavailable");
+
+    // Per-component availability is surfaced so the user knows what to install.
+    await waitFor(() => expect(screen.getByTestId("voice-components")).toBeInTheDocument());
+    expect(screen.getByTestId("voice-components")).toHaveTextContent("capture");
+    expect(screen.getByTestId("voice-components")).toHaveTextContent("stt");
+    expect(screen.getByTestId("voice-missing")).toHaveTextContent("wake");
+    expect(screen.getByTestId("voice-missing")).toHaveTextContent("requirements-voice.txt");
+  });
+
+  it("reports the engine as available once capture, wake and stt are installed", async () => {
+    const bridge = makeBridge();
+    bridge.voice.getStatus.mockResolvedValue({
+      state: "idle",
+      enrolled: true,
+      active: true,
+      engineAvailable: true,
+      speakerSimilarityThreshold: 0.85,
+      components: { capture: true, wake: true, stt: true, speaker: true, tts: true },
+      missingComponents: [],
+    });
+    installBridge(bridge);
+
+    const { ProfileSettings } = await import("../src/components/ProfileSettings");
+    render(<ProfileSettings />);
+
+    await waitFor(() => expect(screen.getByTestId("voice-engine-status")).toBeInTheDocument());
+    expect(screen.getByTestId("voice-engine-status")).not.toHaveTextContent("voice engine unavailable");
+    expect(screen.queryByTestId("voice-missing")).not.toBeInTheDocument();
   });
 });

@@ -187,17 +187,20 @@ def _effective(seconds: float | None, default: float) -> float:
 # ---------------------------------------------------------------------------
 def status() -> dict:
     caps = availability()
+    components = {
+        "capture": caps.get("capture", False) and caps.get("numpy", False),
+        "wake": caps.get("wake", False),
+        "stt": caps.get("stt", False),
+        "speaker": caps.get("speaker", False),
+        "tts": caps.get("tts", False),
+    }
     return {
         "ok": True,
         "running": _loop_running(),
         "sampleRate": SAMPLE_RATE,
-        "components": {
-            "capture": caps.get("capture", False) and caps.get("numpy", False),
-            "wake": caps.get("wake", False),
-            "stt": caps.get("stt", False),
-            "speaker": caps.get("speaker", False),
-            "tts": caps.get("tts", False),
-        },
+        "components": components,
+        # Surfaced so the desktop UI can tell the user exactly what to install.
+        "missing": [name for name, ready in components.items() if not ready],
     }
 
 

@@ -12,24 +12,19 @@ import { RecallPanel } from "./components/RecallPanel";
 import { ScreenContext } from "./components/ScreenContext";
 import { AutomationPanel } from "./components/AutomationPanel";
 import { CommandPalette } from "./components/CommandPalette";
-import { sprygen, bridgeAvailable } from "./lib/sprygen";
+import { bridgeAvailable } from "./lib/sprygen";
 import { BridgeError } from "./components/BridgeError";
-import { useChat } from "./store/chat";
+import { wireVoiceLoop } from "./lib/voiceLoop";
 
 export default function App() {
-  const send = useChat((s) => s.send);
   const bridgeReady = bridgeAvailable();
 
   useEffect(() => {
     if (!bridgeReady) return;
-    const unsubTranscript = sprygen.onEvent("voice:transcript", (text: string) => {
-      send(text);
-    });
-
-    return () => {
-      unsubTranscript();
-    };
-  }, [send, bridgeReady]);
+    // Speech-to-speech: recognised voice commands go through chat and the
+    // answer is spoken back (see lib/voiceLoop).
+    return wireVoiceLoop();
+  }, [bridgeReady]);
 
   const renderContent = (tab: ShellTab) => {
     switch (tab) {

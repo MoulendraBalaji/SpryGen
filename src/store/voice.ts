@@ -13,8 +13,11 @@ interface VoiceControlState {
   listening: boolean;
   error: VoiceRuntimeError | null;
   audioLevel: number;
+  /** Speak assistant answers aloud when a command came in by voice. */
+  speakReplies: boolean;
   load: () => Promise<void>;
   setListening: (on: boolean) => Promise<void>;
+  setSpeakReplies: (on: boolean) => void;
   clearError: () => void;
 }
 
@@ -23,6 +26,7 @@ export const useVoice = create<VoiceControlState>((set, get) => ({
   listening: false,
   error: null,
   audioLevel: 0,
+  speakReplies: true,
 
   load: async () => {
     const status = (await sprygen.voice.getStatus()) as VoiceStatus;
@@ -43,7 +47,8 @@ export const useVoice = create<VoiceControlState>((set, get) => ({
     }
   },
 
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
+  setSpeakReplies: (on) => set({ speakReplies: on })
 }));
 
 if (bridgeAvailable()) {

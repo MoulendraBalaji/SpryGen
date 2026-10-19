@@ -45,6 +45,7 @@ interface PythonStatus {
   ok?: boolean;
   running?: boolean;
   components?: Record<string, boolean>;
+  missing?: string[];
 }
 
 interface PythonEvent {
@@ -121,16 +122,24 @@ class VoiceService extends EventEmitter {
   public async isEngineAvailable(): Promise<boolean> {
     const status = await this.pythonStatus();
     const components = status?.components ?? {};
-    return Boolean(components.capture && components.speaker);
+    // The wake → transcript loop only needs capture + wake + stt. Speaker
+    // embeddings are an optional lock and TTS has an OS fallback.
+    return Boolean(components.capture && components.wake && components.stt);
   }
 
   public async getStatus(): Promise<VoiceStatus> {
+    const status = await this.pythonStatus();
+    const components = status?.components ?? {};
+    const missing =
+      status?.missing ?? Object.entries(components).filter(([, ready]) => !ready).map(([name]) => name);
     return {
       state: this.state,
       enrolled: this.isEnrolled,
       active: this.isActive,
       speakerSimilarityThreshold: this.similarityThreshold,
-      engineAvailable: await this.isEngineAvailable()
+      engineAvailable: Boolean(components.capture && components.wake && components.stt),
+      components,
+      missingComponents: missing
     };
   }
 
