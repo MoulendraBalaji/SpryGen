@@ -35,6 +35,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
+    - target: zip
+      arch: [x64]
   artifactName: Sprygen-${version}-${os}-${arch}.${ext}
   icon: build/icon.ico
 linux:
@@ -42,6 +44,8 @@ linux:
     - target: deb
       arch: [x64]
     - target: AppImage
+      arch: [x64]
+    - target: tar.gz
       arch: [x64]
   category: Utility
   maintainer: Sprygen Team
