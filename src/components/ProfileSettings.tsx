@@ -169,7 +169,7 @@ export function ProfileSettings() {
           <ClayButton variant="primary" onClick={handleEnrollVoice} disabled={enrolling}>
             {enrolling ? "Capturing Voice…" : voiceStatus?.enrolled ? "Re-enroll Voiceprint" : "Enroll Voiceprint"}
           </ClayButton>
-          <ClayButton variant="ghost" onClick={() => sprygen.voice.speak("SPRYGEN voice synthesizer online and ready.")}>
+          <ClayButton variant="ghost" onClick={() => sprygen.voice.speak("SPRYGEN voice synthesizer online and ready.").catch(() => {})}>
             Test Speech (TTS)
           </ClayButton>
         </div>
