@@ -30,7 +30,7 @@ hiddenimports = [
 ] + collect_submodules("backend")
 
 a = Analysis(
-    ["backend/sidecar.py"],
+    ["sidecar.py"],
     pathex=[os.path.abspath(".")],
     binaries=[],
     datas=[],
