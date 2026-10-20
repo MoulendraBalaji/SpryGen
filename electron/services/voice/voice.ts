@@ -34,6 +34,13 @@ export const enum VoiceErrorMsg {
 // Scoped diagnostic logger — file + console forwarding, never silent.
 const log = electronLog.scope("voice-engine");
 
+/**
+ * `/api/voice/start` loads the wake-word models synchronously. On the very
+ * first run they are downloaded (~10 MB) into the per-user cache, which can
+ * take a minute on a slow connection, so allow far more than a typical call.
+ */
+const VOICE_START_TIMEOUT_MS = 120_000;
+
 interface Voiceprint {
   id: string;
   embedding: number[];
@@ -46,6 +53,7 @@ interface PythonStatus {
   running?: boolean;
   components?: Record<string, boolean>;
   missing?: string[];
+  wakeModels?: string[];
 }
 
 interface PythonEvent {
@@ -139,7 +147,8 @@ class VoiceService extends EventEmitter {
       speakerSimilarityThreshold: this.similarityThreshold,
       engineAvailable: Boolean(components.capture && components.wake && components.stt),
       components,
-      missingComponents: missing
+      missingComponents: missing,
+      wakeModels: Array.isArray(status?.wakeModels) ? status.wakeModels : []
     };
   }
 
@@ -280,7 +289,9 @@ class VoiceService extends EventEmitter {
     const res = await proxyToPython<{ ok?: boolean; code?: string; message?: string }>(
       "/api/voice/start",
       { method: "POST", body: JSON.stringify({ reference, threshold: this.similarityThreshold }) },
-      15_000
+      // Generous: the first start downloads the openWakeWord ONNX models
+      // (~10 MB) if they are not cached yet, which can take a minute.
+      VOICE_START_TIMEOUT_MS
     );
 
     if (!res.ok || !res.data?.ok) {

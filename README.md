@@ -308,7 +308,8 @@ MISTRAL_API_KEY=""
 SPRYGEN_OLLAMA_URL="http://127.0.0.1:11434"
 
 # --- Offline voice pipeline (optional; see backend/requirements-voice.txt) ---
-# SPRYGEN_WAKE_MODEL=""            # custom openWakeWord .onnx; blank = bundled model
+# SPRYGEN_WAKE_MODEL=""            # custom openWakeWord .onnx; blank = bundled models
+# SPRYGEN_VOICE_MODELS_DIR=""      # where wake models are cached (default ~/.sprygen/voice-models)
 # SPRYGEN_WHISPER_MODEL="base.en"  # faster-whisper model size
 # SPRYGEN_TTS_VOICE="af_heart"     # Kokoro voice
 # SPRYGEN_VISION_MODEL="llava"     # local vision model for screen understanding
@@ -349,7 +350,9 @@ writing:
 **Packaged builds already include the core voice stack** — microphone capture,
 wake word, speech-to-text, and text-to-speech via the OS synthesizer — so
 speech-to-speech works out of the box. On first use the two models (openWakeWord
-and Whisper `base.en`, ~150 MB total) are downloaded once, then cached locally.
+and Whisper `base.en`, ~150 MB total) are downloaded once, then cached locally
+(openWakeWord under `~/.sprygen/voice-models`, Whisper in the Hugging Face
+cache). No account, key or network call is needed after that.
 
 From a source checkout, install the same stack with:
 
@@ -370,7 +373,25 @@ the wake-word loop still runs.
    aloud** to control whether answers are read back.
 
 Settings shows a live per-component readout (capture · wake · stt · speaker · tts)
-so you always know exactly what is installed and what is missing.
+so you always know exactly what is installed and what is missing, plus the exact
+list of wake phrases the engine is listening for.
+
+#### Wake phrase
+
+Out of the box the engine listens for the **stock openWakeWord phrases** —
+`alexa`, `hey_jarvis`, `hey_mycroft`, `hey_rhasspy`, `timer` and `weather`. The
+current list is always shown in **Settings → Voice & Audio**. To use your own
+phrase, train or download an openWakeWord `.onnx` model and point
+`SPRYGEN_WAKE_MODEL` at it:
+
+```bash
+# A single custom model replaces the bundled set.
+SPRYGEN_WAKE_MODEL="C:\path\to\my_model.onnx"
+```
+
+The models live in a per-user cache so they survive reinstalls and are never
+re-downloaded per launch; override the location with
+`SPRYGEN_VOICE_MODELS_DIR`.
 
 ### Screen understanding
 

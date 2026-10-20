@@ -94,6 +94,127 @@ def _tts_available() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Wake-word models
+#
+# openWakeWord does NOT auto-download its models, and its default target
+# directory lives inside site-packages — which, in a packaged (PyInstaller)
+# build, is an ephemeral per-launch extraction folder. Point it at a persistent
+# per-user cache instead.
+# ---------------------------------------------------------------------------
+WAKE_FEATURE_MODELS = ("melspectrogram.onnx", "embedding_model.onnx")
+
+
+def wake_model_dir() -> str:
+    """Directory that caches the openWakeWord ONNX models between launches."""
+    override = os.getenv("SPRYGEN_VOICE_MODELS_DIR", "").strip()
+    if override:
+        return override
+    return os.path.join(os.path.expanduser("~"), ".sprygen", "voice-models")
+
+
+def _wake_model_files(model_dir: str) -> list[str]:
+    """Expected ONNX paths for every bundled wake model (in ``openwakeword.MODELS``)."""
+    import openwakeword
+
+    files = [
+        os.path.join(model_dir, info["download_url"].rsplit("/", 1)[-1].replace(".tflite", ".onnx"))
+        for info in openwakeword.MODELS.values()
+    ]
+    files += [os.path.join(model_dir, name) for name in WAKE_FEATURE_MODELS]
+    return files
+
+
+def _download_wake_models(model_dir: str) -> None:
+    """Fetch the ONNX wake + feature models missing from ``model_dir``.
+
+    openWakeWord ships its weights as GitHub release assets; ONNX builds are
+    derived from the published ``.tflite`` URLs by swapping the extension, the
+    same convention ``openwakeword.utils.download_models`` relies on. Both
+    variants are requested so the directory matches what upstream expects.
+    """
+    import openwakeword
+    from openwakeword.utils import download_file
+
+    urls: list[str] = [
+        info["download_url"]
+        for info in (*openwakeword.FEATURE_MODELS.values(), *openwakeword.MODELS.values())
+    ]
+    urls += [url.replace(".tflite", ".onnx") for url in list(urls)]
+
+    try:
+        for url in urls:
+            name = url.rsplit("/", 1)[-1]
+            if os.path.exists(os.path.join(model_dir, name)):
+                continue
+            download_file(url, model_dir)
+    except Exception as exc:  # noqa: BLE001 - any failure means "cannot fetch"
+        raise RuntimeError(
+            f"Could not download the openWakeWord models into {model_dir} "
+            f"({exc}). They are fetched once on first use; connect to the "
+            "internet, or set SPRYGEN_WAKE_MODEL to a local .onnx model."
+        ) from exc
+
+
+def load_wake_model(model_path: str = "") -> Any:
+    """Build the openWakeWord engine, downloading bundled models on first use.
+
+    ``model_path`` may point at a custom ONNX model; blank loads every bundled
+    pre-trained phrase. Models are fetched once into :func:`wake_model_dir` and
+    reused. Raises a descriptive error when the download fails (offline first
+    run) so the caller can surface it instead of crashing silently.
+    """
+    from openwakeword.model import Model
+
+    if model_path:
+        if not os.path.isfile(model_path):
+            raise RuntimeError(f"SPRYGEN_WAKE_MODEL points at {model_path}, which does not exist.")
+        return Model(wakeword_models=[model_path], inference_framework="onnx")
+
+    model_dir = wake_model_dir()
+    os.makedirs(model_dir, exist_ok=True)
+
+    # `openwakeword.utils.download_models` skips its ONNX downloads whenever the
+    # corresponding .tflite file is already present (upstream quirk: the guard
+    # checks the .tflite name but fetches both). If a previous run was cut short
+    # that leaves us with only the .tflite half, so drive the download per file
+    # instead of trusting its "already exists" shortcut.
+    expected = _wake_model_files(model_dir)
+    missing = [path for path in expected if not os.path.exists(path)]
+    if missing:
+        _download_wake_models(model_dir)
+
+    still_missing = [path for path in expected if not os.path.exists(path)]
+    if still_missing:
+        raise RuntimeError(
+            "openWakeWord models are incomplete in "
+            f"{model_dir} (missing: {', '.join(os.path.basename(p) for p in still_missing)}). "
+            "Delete the folder and retry with internet access."
+        )
+
+    wake_files = [
+        path
+        for path in expected
+        if path.endswith(".onnx") and not path.endswith(WAKE_FEATURE_MODELS)
+    ]
+    return Model(
+        wakeword_models=wake_files,
+        inference_framework="onnx",
+        melspec_model_path=os.path.join(model_dir, "melspectrogram.onnx"),
+        embedding_model_path=os.path.join(model_dir, "embedding_model.onnx"),
+    )
+
+
+def wake_phrases() -> list[str]:
+    """Names of the bundled wake models, for the settings UI."""
+    try:
+        import openwakeword
+
+        return sorted(openwakeword.MODELS.keys())
+    except Exception:  # noqa: BLE001
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Model singletons (loaded lazily on first use, then reused)
 # ---------------------------------------------------------------------------
 _encoder: Any = None
@@ -201,6 +322,10 @@ def status() -> dict:
         "components": components,
         # Surfaced so the desktop UI can tell the user exactly what to install.
         "missing": [name for name, ready in components.items() if not ready],
+        # The bundled openWakeWord models are what the engine actually listens
+        # for; SPRYGEN_WAKE_MODEL may swap in a custom one.
+        "wakeModels": wake_phrases() if components["wake"] else [],
+        "modelDir": wake_model_dir(),
     }
 
 
@@ -353,10 +478,9 @@ class _VoiceLoop(threading.Thread):
         try:
             import numpy as np
             import sounddevice as sd
-            from openwakeword.model import Model
 
             model_path = os.getenv("SPRYGEN_WAKE_MODEL", "").strip()
-            wakeword = Model(wakeword_models=[model_path] if model_path else None)
+            wakeword = load_wake_model(model_path)
             with sd.InputStream(
                 samplerate=SAMPLE_RATE,
                 channels=1,

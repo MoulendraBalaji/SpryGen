@@ -116,6 +116,12 @@ export interface VoiceStatus {
   components?: Record<string, boolean>;
   /** Component keys that are not installed (e.g. ["wake", "stt", "tts"]). */
   missingComponents?: string[];
+  /**
+   * Wake phrases the engine actually listens for, from the bundled
+   * openWakeWord models. Empty when the wake component is unavailable or a
+   * custom SPRYGEN_WAKE_MODEL is configured.
+   */
+  wakeModels?: string[];
 }
 
 export interface VoiceEnrollmentProgress {

@@ -58,7 +58,7 @@ export function ProfileSettings() {
       currentSample: 0,
       totalSamples: 8,
       status: "capturing",
-      message: "Starting voice enrollment. Speak 'Hey SPRYGEN' clearly..."
+      message: "Starting voice enrollment. Read the phrase aloud so we can capture your voiceprint..."
     });
     try {
       await sprygen.voice.enroll();
@@ -212,6 +212,14 @@ export function ProfileSettings() {
               </span>
             ))}
           </div>
+        )}
+
+        {voiceStatus?.wakeModels && voiceStatus.wakeModels.length > 0 && (
+          <p className="console-meta" style={{ margin: "6px 0 0" }} data-testid="voice-wake-phrases">
+            Listening for: {voiceStatus.wakeModels.join(", ")} — these are the bundled
+            openWakeWord models. Set <code>SPRYGEN_WAKE_MODEL</code> to a custom ONNX file to
+            change the wake phrase.
+          </p>
         )}
 
         {voiceStatus?.missingComponents && voiceStatus.missingComponents.length > 0 && (

@@ -9,10 +9,11 @@
  * Usage:
  *   node scripts/verify-sidecar-voice.mjs [path/to/sprygen-backend]
  *
- * Exits 0 when capture + wake + stt are importable inside the frozen binary,
- * 1 otherwise (so the release job fails instead of shipping a voice-less app).
- * speaker/tts are optional here: they pull PyTorch and are intentionally not
- * part of packaged builds (text-to-speech falls back to the OS synthesiser).
+ * Exits 0 when capture + wake + stt are importable inside the frozen binary and
+ * the wake component advertises at least one wake phrase, 1 otherwise (so the
+ * release job fails instead of shipping a voice-less app). speaker/tts are
+ * optional here: they pull PyTorch and are intentionally not part of packaged
+ * builds (text-to-speech falls back to the OS synthesiser).
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -100,10 +101,23 @@ try {
   const missing = REQUIRED.filter((name) => components[name] !== true);
   const missingOptional = OPTIONAL.filter((name) => components[name] !== true);
 
+  // Importing openwakeword is not enough: the wake loop builds a Model from the
+  // bundled phrase list, and an empty list means nothing can ever wake the app.
+  const wakeModels = Array.isArray(status?.wakeModels) ? status.wakeModels : [];
+  if (components.wake === true && wakeModels.length === 0) {
+    console.error(
+      "verify-sidecar-voice: FAIL — the wake component is present but advertises no wake " +
+        "phrases, so the loop could never trigger.\n  Check openwakeword.MODELS in the build " +
+        "environment and backend/services/voice/__init__.py."
+    );
+    missing.push("wakeModels");
+  }
+
   if (missing.length === 0) {
     console.log(
       `verify-sidecar-voice: PASS — bundled core voice stack present (${REQUIRED.join(", ")})`
     );
+    console.log(`verify-sidecar-voice: wake phrases: ${wakeModels.join(", ")}`);
     if (missingOptional.length) {
       console.log(
         `verify-sidecar-voice: note — optional components not bundled: ${missingOptional.join(", ")}`
@@ -111,10 +125,24 @@ try {
     }
     exitCode = 0;
   } else {
+    const installable = missing.filter((name) => name !== "wakeModels");
+    const hints = [];
+    if (installable.length) {
+      hints.push(
+        `  Install them in the build environment:\n    pip install -r backend/requirements-voice-core.txt`
+      );
+    }
+    if (missing.includes("wakeModels")) {
+      hints.push(
+        "  No wake phrases were reported — the engine would start but never wake.\n" +
+          "    Check that openwakeword.MODELS is populated and that\n" +
+          "    backend/services/voice/load_wake_model() passes the bundled models to Model()."
+      );
+    }
     console.error(
       `verify-sidecar-voice: FAIL — frozen sidecar is missing required voice components: ${missing.join(
         ", "
-      )}\n  Install them in the build environment:\n    pip install -r backend/requirements-voice-core.txt`
+      )}\n${hints.join("\n")}`
     );
   }
 } catch (err) {

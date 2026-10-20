@@ -8,6 +8,9 @@ when the models are missing.
 from __future__ import annotations
 
 import math
+import os
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -165,3 +168,163 @@ def test_missing_voiceprint_fails_closed(synthetic_voice):
     assert result["verified"] is False
     assert result["code"] == "no_reference"
     assert result["score"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Wake-word model loading
+#
+# Regression guard for the packaged-app bug where the engine was built with
+# `Model(wakeword_models=None)`, which openWakeWord rejects with
+# "object of type 'NoneType' has no len()". These tests never touch the network
+# or the real openWakeWord runtime; they check the file bookkeeping and the
+# errors that get surfaced to the user.
+# ---------------------------------------------------------------------------
+
+
+def _fake_wake_models(names: list[str]) -> dict:
+    """Stand-in for ``openwakeword.MODELS`` (URLs define the expected files)."""
+    return {
+        name: {"download_url": f"https://example.invalid/{name}_v0.1.tflite"} for name in names
+    }
+
+
+def test_wake_model_dir_overridable(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPRYGEN_VOICE_MODELS_DIR", raising=False)
+    default = voice.wake_model_dir()
+    assert os.path.sep in default
+
+    monkeypatch.setenv("SPRYGEN_VOICE_MODELS_DIR", str(tmp_path))
+    assert voice.wake_model_dir() == str(tmp_path)
+
+
+def test_wake_model_files_cover_wake_and_feature_models(monkeypatch, tmp_path):
+    monkeypatch.setitem(sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha", "beta"])))
+
+    files = voice._wake_model_files(str(tmp_path))
+
+    basenames = {os.path.basename(path) for path in files}
+    assert {"alpha_v0.1.onnx", "beta_v0.1.onnx", *voice.WAKE_FEATURE_MODELS} <= basenames
+
+
+def test_load_wake_model_missing_custom_path_is_actionable():
+    with pytest.raises(RuntimeError, match="SPRYGEN_WAKE_MODEL"):
+        voice.load_wake_model("/nonexistent/wake-model.onnx")
+
+
+def test_load_wake_model_reports_offline_first_run(monkeypatch, tmp_path):
+    """A failed download (offline first run) must not crash with a bare TypeError."""
+    monkeypatch.setenv("SPRYGEN_VOICE_MODELS_DIR", str(tmp_path))
+    monkeypatch.setattr(voice, "wake_model_dir", lambda: str(tmp_path))
+    monkeypatch.setitem(
+        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
+    )
+    utils = ModuleType("openwakeword.utils")
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("Name or service not known")
+
+    utils.download_file = _boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+
+    with pytest.raises(RuntimeError, match="Could not download the openWakeWord models"):
+        voice.load_wake_model("")
+
+
+def test_load_wake_model_leaves_a_cached_dir_untouched(monkeypatch, tmp_path):
+    """Every model already cached: loading must never hit the network."""
+    monkeypatch.setattr(voice, "wake_model_dir", lambda: str(tmp_path))
+    monkeypatch.setitem(
+        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
+    )
+    for path in voice._wake_model_files(str(tmp_path)):
+        with open(path, "wb") as handle:
+            handle.write(b"cached")
+
+    def _no_network(*_args, **_kwargs):
+        raise AssertionError("must not download when every model is cached")
+
+    utils = ModuleType("openwakeword.utils")
+    utils.download_file = _no_network  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+
+    captured: dict = {}
+
+    class _FakeModel:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    model_stub = ModuleType("openwakeword.model")
+    model_stub.Model = _FakeModel  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.model", model_stub)
+
+    voice.load_wake_model("")
+
+    assert captured["inference_framework"] == "onnx"
+    wakeword_models = captured["wakeword_models"]
+    basenames = {os.path.basename(path) for path in wakeword_models}
+    assert "alpha_v0.1.onnx" in basenames
+    # Feature models must never be handed to Model as wake words.
+    assert not any(name in basenames for name in voice.WAKE_FEATURE_MODELS)
+
+
+def test_download_wake_models_requests_onnx_and_tflite(monkeypatch, tmp_path):
+    """Both variants are requested, mirroring openwakeword's own URL handling."""
+    fetched: list[str] = []
+    monkeypatch.setitem(
+        sys.modules,
+        "openwakeword",
+        SimpleNamespace(
+            MODELS=_fake_wake_models(["alpha"]),
+            FEATURE_MODELS={"mel": {"download_url": "https://example.invalid/mel.tflite"}},
+        ),
+    )
+    utils = ModuleType("openwakeword.utils")
+    utils.download_file = lambda url, _dir: fetched.append(url.rsplit("/", 1)[-1])  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+
+    voice._download_wake_models(str(tmp_path))
+
+    assert {".tflite", ".onnx"} == {os.path.splitext(name)[1] for name in fetched}
+    assert "alpha_v0.1.onnx" in fetched
+    assert "mel.onnx" in fetched
+
+
+def test_download_wake_models_skips_files_already_cached(monkeypatch, tmp_path):
+    """A cached model must not be re-fetched (offline-safe after first run)."""
+    (tmp_path / "alpha_v0.1.onnx").write_bytes(b"cached")
+    fetched: list[str] = []
+    monkeypatch.setitem(
+        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
+    )
+    utils = ModuleType("openwakeword.utils")
+    utils.download_file = lambda url, _dir: fetched.append(url.rsplit("/", 1)[-1])  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+
+    voice._download_wake_models(str(tmp_path))
+
+    assert "alpha_v0.1.onnx" not in fetched
+
+
+def test_download_failure_message_names_the_model_dir(monkeypatch, tmp_path):
+    monkeypatch.setitem(
+        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
+    )
+    utils = ModuleType("openwakeword.utils")
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("connection reset")
+
+    utils.download_file = _boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        voice._download_wake_models(str(tmp_path))
+
+    assert str(tmp_path) in str(excinfo.value)
+    assert "SPRYGEN_WAKE_MODEL" in str(excinfo.value)
+
+
+def test_wake_phrases_reports_bundled_models(monkeypatch):
+    fake = _fake_wake_models(["zulu", "alpha"])
+    monkeypatch.setitem(sys.modules, "openwakeword", SimpleNamespace(MODELS=fake))
+    assert voice.wake_phrases() == ["alpha", "zulu"]
