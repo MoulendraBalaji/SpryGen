@@ -379,3 +379,59 @@ def test_wake_phrases_reports_bundled_models(monkeypatch):
     fake = _fake_wake_models(["zulu", "alpha"])
     monkeypatch.setitem(sys.modules, "openwakeword", SimpleNamespace(MODELS=fake))
     assert voice.wake_phrases() == ["alpha", "zulu"]
+
+
+# ---------------------------------------------------------------------------
+# Frozen-build PortAudio lookup (backend/rthook_portaudio.py)
+# ---------------------------------------------------------------------------
+
+
+def _load_portaudio_rthook(meipass: str | None):
+    """Import the PyInstaller runtime hook with ``sys._MEIPASS`` set.
+
+    The hook reads ``sys._MEIPASS`` when its patched ``find_library`` is *called*,
+    not at import time, so the caller must keep it set while asserting.
+    """
+    import importlib.util
+
+    hook_path = os.path.join(os.path.dirname(__file__), "..", "rthook_portaudio.py")
+    spec = importlib.util.spec_from_file_location("rthook_portaudio", hook_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    if meipass is not None:
+        sys._MEIPASS = meipass
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_portaudio_rthook_finds_bundled_library(tmp_path, monkeypatch):
+    """A frozen app must resolve `portaudio` to the bundled libportaudio.so.2.
+
+    sounddevice only ever calls ``ctypes.util.find_library('portaudio')`` on
+    Linux, and the stock implementation does not search ``sys._MEIPASS``, so
+    without this hook a bundled library would still look missing.
+    """
+    import ctypes.util
+
+    bundled = tmp_path / "libportaudio.so.2"
+    bundled.write_bytes(b"stub")
+
+    # Isolate the global patch this hook installs.
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(ctypes.util, "find_library", ctypes.util.find_library)
+    hook = _load_portaudio_rthook(str(tmp_path))
+
+    assert ctypes.util.find_library("portaudio") == str(bundled)
+    # Unrelated libraries are resolved by the original implementation.
+    assert ctypes.util.find_library("m") == hook._original_find_library("m")
+
+
+def test_portaudio_rthook_defers_when_nothing_is_bundled(tmp_path, monkeypatch):
+    """With no bundled copy the original lookup must be used, not a fake path."""
+    import ctypes.util
+
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(ctypes.util, "find_library", ctypes.util.find_library)
+    hook = _load_portaudio_rthook(str(tmp_path))
+
+    assert ctypes.util.find_library("portaudio") == hook._original_find_library("portaudio")

@@ -96,6 +96,19 @@ if "sounddevice" in hiddenimports:
             "spec: Set SPRYGEN_ALLOW_VOICE_WITHOUT_PORTAUDIO=1 to build anyway."
         )
 
+# ---------------------------------------------------------------------------
+# PortAudio name lookup inside the frozen app.
+#
+# sounddevice finds PortAudio purely through ``ctypes.util.find_library`` on
+# Linux, and the stock implementation never looks in ``sys._MEIPASS`` (where
+# bundled shared libraries live), so a frozen app that contains
+# ``libportaudio.so.2`` would still report capture=false. ``rthook_portaudio``
+# runs before application code and teaches find_library about the bundled copy,
+# without disturbing system lookups. It is a no-op on Windows/macOS, where
+# sounddevice's own fallback and PyInstaller's search-path prepend already work.
+# ---------------------------------------------------------------------------
+runtime_hooks = [os.path.join(SPECPATH, "rthook_portaudio.py")]
+
 a = Analysis(
     ["sidecar.py"],
     pathex=[os.path.abspath(".")],
@@ -104,7 +117,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=runtime_hooks,
     excludes=[],
     noarchive=False,
 )
