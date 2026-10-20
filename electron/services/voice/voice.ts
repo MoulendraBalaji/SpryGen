@@ -54,6 +54,7 @@ interface PythonStatus {
   components?: Record<string, boolean>;
   missing?: string[];
   wakeModels?: string[];
+  componentErrors?: Record<string, string>;
 }
 
 interface PythonEvent {

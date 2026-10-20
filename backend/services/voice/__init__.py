@@ -49,30 +49,51 @@ _COMPONENT_MODULES: dict[str, str] = {
 }
 
 _availability_cache: dict[str, bool] | None = None
+_availability_errors: dict[str, str] = {}
 _availability_lock = threading.Lock()
 
 
-def _importable(module: str) -> bool:
+def _import_probe(module: str) -> tuple[bool, str]:
+    """Import ``module`` and report both the outcome and, on failure, why.
+
+    The reason matters for diagnostics: an installed-but-broken native library
+    (e.g. sounddevice without PortAudio) looks identical to "not installed" if
+    the exception is swallowed.
+    """
     try:
         __import__(module)
-        return True
-    except Exception:  # noqa: BLE001 - any import failure means "not installed"
-        return False
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 - any import failure means "not installed"
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _importable(module: str) -> bool:
+    return _import_probe(module)[0]
 
 
 def availability() -> dict[str, bool]:
     """Return (and cache) which optional voice components are importable."""
-    global _availability_cache
+    global _availability_cache, _availability_errors
     with _availability_lock:
         if _availability_cache is None:
-            _availability_cache = {key: _importable(mod) for key, mod in _COMPONENT_MODULES.items()}
+            results = {key: _import_probe(mod) for key, mod in _COMPONENT_MODULES.items()}
+            _availability_cache = {key: ok for key, (ok, _) in results.items()}
+            _availability_errors = {key: why for key, (ok, why) in results.items() if not ok}
         return dict(_availability_cache)
 
 
+def availability_errors() -> dict[str, str]:
+    """Why each unavailable component failed to import (empty when all are fine)."""
+    availability()
+    with _availability_lock:
+        return dict(_availability_errors)
+
+
 def reload_availability() -> None:
-    global _availability_cache
+    global _availability_cache, _availability_errors
     with _availability_lock:
         _availability_cache = None
+        _availability_errors = {}
 
 
 def _capture_ready() -> bool:
@@ -312,6 +333,7 @@ def _effective(seconds: float | None, default: float) -> float:
 # ---------------------------------------------------------------------------
 def status() -> dict:
     caps = availability()
+    errors = availability_errors()
     components = {
         "capture": caps.get("capture", False) and caps.get("numpy", False),
         "wake": caps.get("wake", False),
@@ -330,6 +352,12 @@ def status() -> dict:
         # for; SPRYGEN_WAKE_MODEL may swap in a custom one.
         "wakeModels": wake_phrases() if components["wake"] else [],
         "modelDir": wake_model_dir(),
+        # Why an unavailable component failed to import, e.g. "capture":
+        # "OSError: PortAudio library not found". This distinguishes a missing
+        # package from a broken native dependency.
+        "componentErrors": {
+            name: errors[name] for name in ("capture", "wake", "stt") if name in errors
+        },
     }
 
 

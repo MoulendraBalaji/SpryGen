@@ -22,7 +22,10 @@ import * as path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const REQUIRED = ["capture", "wake", "stt"];
-const OPTIONAL = ["numpy", "speaker", "tts"];
+// numpy is a hard dependency of capture (it is folded into the capture flag by
+// the API), so it is not reported separately; only genuinely optional extras go
+// in this list.
+const OPTIONAL = ["speaker", "tts"];
 const TOKEN = "verify-sidecar-token";
 
 function resolveBinary() {
@@ -101,6 +104,17 @@ try {
   const missing = REQUIRED.filter((name) => components[name] !== true);
   const missingOptional = OPTIONAL.filter((name) => components[name] !== true);
 
+  // Surface the underlying import error: "not installed" and "installed but its
+  // native library is missing" produce the same boolean otherwise.
+  const componentErrors = status?.componentErrors ?? {};
+  if (missing.length) {
+    for (const name of missing) {
+      if (componentErrors[name]) {
+        console.error(`verify-sidecar-voice: ${name} failed to import — ${componentErrors[name]}`);
+      }
+    }
+  }
+
   // Importing openwakeword is not enough: the wake loop builds a Model from the
   // bundled phrase list, and an empty list means nothing can ever wake the app.
   const wakeModels = Array.isArray(status?.wakeModels) ? status.wakeModels : [];
@@ -129,7 +143,10 @@ try {
     const hints = [];
     if (installable.length) {
       hints.push(
-        `  Install them in the build environment:\n    pip install -r backend/requirements-voice-core.txt`
+        `  Install them in the build environment:\n    pip install -r backend/requirements-voice-core.txt\n` +
+          `  If only "capture" is missing, the host may lack PortAudio:\n` +
+          `    Linux: sudo apt-get install -y libportaudio2\n` +
+          `    (Windows/macOS ship it with the sounddevice wheel.)`
       );
     }
     if (missing.includes("wakeModels")) {

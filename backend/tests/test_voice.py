@@ -37,6 +37,36 @@ def test_status_reports_missing_components(no_components):
     }
 
 
+def test_availability_errors_record_why_a_component_failed(monkeypatch):
+    """A missing package and a broken native library must be distinguishable."""
+    monkeypatch.setattr(
+        voice,
+        "_COMPONENT_MODULES",
+        {"capture": "sounddevice", "wake": "openwakeword", "numpy": "numpy"},
+    )
+    voice.reload_availability()
+
+    def _probe(module: str):
+        if module == "sounddevice":
+            return False, "OSError: PortAudio library not found"
+        return True, ""
+
+    monkeypatch.setattr(voice, "_import_probe", _probe)
+    voice.reload_availability()
+
+    try:
+        errors = voice.availability_errors()
+        assert errors == {"capture": "OSError: PortAudio library not found"}
+        # Healthy components are not reported in the error map.
+        assert "wake" not in errors
+        assert voice.status()["componentErrors"] == {
+            "capture": "OSError: PortAudio library not found"
+        }
+    finally:
+        monkeypatch.undo()
+        voice.reload_availability()
+
+
 def test_sample_fails_closed_without_models(no_components):
     result = voice.sample(1.0)
     assert result["ok"] is False

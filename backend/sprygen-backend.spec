@@ -36,8 +36,15 @@ hiddenimports = [
 # lazily via ``__import__``, which PyInstaller cannot discover by itself — the
 # packaged app would otherwise report every component as missing and the mic
 # toggle would fail with ENGINE_FAILURE. Listing them as hidden imports makes
-# PyInstaller follow their module graphs statically; the data files (e.g.
-# sounddevice's bundled PortAudio binaries) are collected explicitly.
+# PyInstaller follow their module graphs statically.
+#
+# PortAudio (needed by sounddevice) is handled by PyInstaller's own
+# ``hook-sounddevice``: the Windows/macOS wheels bundle the library under
+# ``_sounddevice_data`` and the hook collects it, while on Linux there is no
+# bundled copy and the *build host* must provide it (``libportaudio2``,
+# see .github/workflows/release.yml). Without it the hook logs
+# "portaudio shared library not found" and the packaged app reports
+# capture=false, so we fail the build here instead of shipping a mute app.
 #
 # Every package here is optional at build time: if it is not installed in the
 # build environment the build still succeeds and the component is simply
@@ -52,6 +59,42 @@ for _pkg in VOICE_PACKAGES:
         voice_datas += collect_data_files(_pkg)
     except Exception as _exc:  # not installed in this environment
         print(f"spec: no data files for {_pkg}: {_exc}")
+
+
+def _portaudio_available() -> bool:
+    """Whether a PortAudio library can be found on this build host."""
+    import ctypes.util
+
+    try:
+        import _sounddevice_data  # noqa: F401
+
+        data_dir = os.path.join(next(iter(_sounddevice_data.__path__)), "portaudio-binaries")
+        if any(name.startswith("libportaudio") for name in os.listdir(data_dir)):
+            return True
+    except Exception:  # noqa: BLE001 - fall through to the system probe
+        pass
+    return ctypes.util.find_library("portaudio") is not None
+
+
+if "sounddevice" in hiddenimports:
+    if _portaudio_available():
+        print("spec: PortAudio found — audio capture will be bundled")
+    elif os.environ.get("SPRYGEN_ALLOW_VOICE_WITHOUT_PORTAUDIO", "0") == "1":
+        print(
+            "spec: WARNING - PortAudio is unavailable on this build host, so the "
+            "packaged app will not be able to capture audio.\n"
+            "spec: Linux: sudo apt-get install -y libportaudio2   "
+            "(Windows/macOS wheels bundle it)."
+        )
+    else:
+        raise SystemExit(
+            "spec: ERROR - PortAudio is unavailable on this build host, so the "
+            "packaged app would report capture=false and the microphone would "
+            "never open.\n"
+            "spec: Linux: sudo apt-get install -y libportaudio2   "
+            "(Windows/macOS wheels bundle it).\n"
+            "spec: Set SPRYGEN_ALLOW_VOICE_WITHOUT_PORTAUDIO=1 to build anyway."
+        )
 
 a = Analysis(
     ["sidecar.py"],

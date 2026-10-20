@@ -52,6 +52,13 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # sounddevice only bundles PortAudio on Windows and macOS; on Linux it
+      # links against the system library, so the build host must provide it or
+      # the frozen app reports capture=false (the mic would never open).
+      - name: Install PortAudio (Linux build host)
+        if: matrix.name == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+
       # Assets must be named after the tag that triggered the build (the
       # package.json version only changes on release cuts).
       - name: Sync package.json version with the release tag

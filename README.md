@@ -287,6 +287,15 @@ npm run package:win     # or package:mac / package:linux
 
 Installers land in `release/`.
 
+The frozen Python sidecar needs **PortAudio** so the packaged app can open the
+microphone. The Windows and macOS `sounddevice` wheels bundle it; on Linux the
+build host must provide it (the build fails with a clear message if it is
+missing):
+
+```bash
+sudo apt-get install -y libportaudio2
+```
+
 ---
 
 ## ⚙️ Configuration
