@@ -13,11 +13,14 @@ and only falls back to the copy shipped in the wheel on Windows and macOS:
         raise OSError('PortAudio library not found')
 
 On Linux that fallback branch simply re-raises, so the *only* way in is
-``find_library``. The stock POSIX implementation consults ``ld.so.cache``,
-``LD_LIBRARY_PATH`` and a couple of probe directories - it never looks at
-``sys._MEIPASS``, where PyInstaller unpacks bundled shared libraries. The result
-is that a frozen app which *does* contain ``libportaudio.so.2`` still reports
-capture=false, because the library cannot be found by name.
+``find_library``. Whether it succeeds inside a frozen app depends on the
+sounddevice and PyInstaller versions: PyInstaller's dependency analysis has
+rewritten ctypes lookups over time, and older combinations (see
+spatialaudio/python-sounddevice#130) reported "PortAudio library not found"
+even with the library bundled. Our current versions resolve it correctly, and
+the release build passes on all three platforms without this hook - it is kept
+as defence in depth so a future sounddevice or PyInstaller change cannot
+silently ship a mute app on Linux.
 
 This hook runs before any application code. It restores the bundled library to
 the name lookup by returning its absolute path from ``find_library``. It is

@@ -100,12 +100,13 @@ if "sounddevice" in hiddenimports:
 # PortAudio name lookup inside the frozen app.
 #
 # sounddevice finds PortAudio purely through ``ctypes.util.find_library`` on
-# Linux, and the stock implementation never looks in ``sys._MEIPASS`` (where
-# bundled shared libraries live), so a frozen app that contains
-# ``libportaudio.so.2`` would still report capture=false. ``rthook_portaudio``
-# runs before application code and teaches find_library about the bundled copy,
-# without disturbing system lookups. It is a no-op on Windows/macOS, where
-# sounddevice's own fallback and PyInstaller's search-path prepend already work.
+# Linux. Our current sounddevice/PyInstaller combination resolves the bundled
+# library correctly without help (the release build passes on all three
+# platforms), but older combinations did not, so ``rthook_portaudio`` is wired
+# in as defence in depth: it runs before application code and teaches
+# find_library about the bundled copy without disturbing system lookups. It is a
+# no-op on Windows/macOS, where sounddevice's own fallback and PyInstaller's
+# search-path prepend already work.
 # ---------------------------------------------------------------------------
 runtime_hooks = [os.path.join(SPECPATH, "rthook_portaudio.py")]
 

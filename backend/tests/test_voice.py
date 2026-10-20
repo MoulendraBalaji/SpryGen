@@ -399,7 +399,7 @@ def _load_portaudio_rthook(meipass: str | None):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     if meipass is not None:
-        sys._MEIPASS = meipass
+        setattr(sys, "_MEIPASS", meipass)
     spec.loader.exec_module(module)
     return module
 
