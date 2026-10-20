@@ -188,6 +188,35 @@ def _fake_wake_models(names: list[str]) -> dict:
     }
 
 
+def _install_openwakeword_stub(
+    monkeypatch,
+    names: list[str],
+    *,
+    model_factory: type | None = None,
+    download_file=None,
+) -> None:
+    """Install a minimal ``openwakeword`` package that CI can import.
+
+    CI deliberately does not install the real stack, so the module needs both an
+    ``openwakeword`` namespace *and* an importable ``openwakeword.model``
+    submodule for ``from openwakeword.model import Model`` to resolve.
+    """
+    package = ModuleType("openwakeword")
+    package.MODELS = _fake_wake_models(names)  # type: ignore[attr-defined]
+    package.FEATURE_MODELS = {}  # type: ignore[attr-defined]
+
+    model_stub = ModuleType("openwakeword.model")
+    model_stub.Model = model_factory or object  # type: ignore[attr-defined]
+
+    utils_stub = ModuleType("openwakeword.utils")
+    if download_file is not None:
+        utils_stub.download_file = download_file  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "openwakeword", package)
+    monkeypatch.setitem(sys.modules, "openwakeword.model", model_stub)
+    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils_stub)
+
+
 def test_wake_model_dir_overridable(monkeypatch, tmp_path):
     monkeypatch.delenv("SPRYGEN_VOICE_MODELS_DIR", raising=False)
     default = voice.wake_model_dir()
@@ -207,6 +236,7 @@ def test_wake_model_files_cover_wake_and_feature_models(monkeypatch, tmp_path):
 
 
 def test_load_wake_model_missing_custom_path_is_actionable():
+    """A bad custom path is reported even where openWakeWord is not installed."""
     with pytest.raises(RuntimeError, match="SPRYGEN_WAKE_MODEL"):
         voice.load_wake_model("/nonexistent/wake-model.onnx")
 
@@ -215,16 +245,11 @@ def test_load_wake_model_reports_offline_first_run(monkeypatch, tmp_path):
     """A failed download (offline first run) must not crash with a bare TypeError."""
     monkeypatch.setenv("SPRYGEN_VOICE_MODELS_DIR", str(tmp_path))
     monkeypatch.setattr(voice, "wake_model_dir", lambda: str(tmp_path))
-    monkeypatch.setitem(
-        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
-    )
-    utils = ModuleType("openwakeword.utils")
 
     def _boom(*_args, **_kwargs):
         raise OSError("Name or service not known")
 
-    utils.download_file = _boom  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
+    _install_openwakeword_stub(monkeypatch, ["alpha"], download_file=_boom)
 
     with pytest.raises(RuntimeError, match="Could not download the openWakeWord models"):
         voice.load_wake_model("")
@@ -233,19 +258,9 @@ def test_load_wake_model_reports_offline_first_run(monkeypatch, tmp_path):
 def test_load_wake_model_leaves_a_cached_dir_untouched(monkeypatch, tmp_path):
     """Every model already cached: loading must never hit the network."""
     monkeypatch.setattr(voice, "wake_model_dir", lambda: str(tmp_path))
-    monkeypatch.setitem(
-        sys.modules, "openwakeword", SimpleNamespace(MODELS=_fake_wake_models(["alpha"]), FEATURE_MODELS={})
-    )
-    for path in voice._wake_model_files(str(tmp_path)):
-        with open(path, "wb") as handle:
-            handle.write(b"cached")
 
     def _no_network(*_args, **_kwargs):
         raise AssertionError("must not download when every model is cached")
-
-    utils = ModuleType("openwakeword.utils")
-    utils.download_file = _no_network  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "openwakeword.utils", utils)
 
     captured: dict = {}
 
@@ -253,9 +268,14 @@ def test_load_wake_model_leaves_a_cached_dir_untouched(monkeypatch, tmp_path):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    model_stub = ModuleType("openwakeword.model")
-    model_stub.Model = _FakeModel  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "openwakeword.model", model_stub)
+    _install_openwakeword_stub(
+        monkeypatch, ["alpha"], model_factory=_FakeModel, download_file=_no_network
+    )
+
+    # Seed every file the loader expects, then load with the network disabled.
+    for path in voice._wake_model_files(str(tmp_path)):
+        with open(path, "wb") as handle:
+            handle.write(b"cached")
 
     voice.load_wake_model("")
 

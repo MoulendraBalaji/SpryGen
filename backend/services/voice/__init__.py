@@ -163,11 +163,15 @@ def load_wake_model(model_path: str = "") -> Any:
     reused. Raises a descriptive error when the download fails (offline first
     run) so the caller can surface it instead of crashing silently.
     """
+    # Validate the custom path before importing the engine so a misconfigured
+    # SPRYGEN_WAKE_MODEL reports the real problem even where openWakeWord is
+    # not installed.
+    if model_path and not os.path.isfile(model_path):
+        raise RuntimeError(f"SPRYGEN_WAKE_MODEL points at {model_path}, which does not exist.")
+
     from openwakeword.model import Model
 
     if model_path:
-        if not os.path.isfile(model_path):
-            raise RuntimeError(f"SPRYGEN_WAKE_MODEL points at {model_path}, which does not exist.")
         return Model(wakeword_models=[model_path], inference_framework="onnx")
 
     model_dir = wake_model_dir()
