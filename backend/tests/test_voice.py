@@ -100,7 +100,8 @@ def test_effective_seconds_clamped():
     assert voice._effective(None, 3.0) == 3.0
     assert voice._effective(0.0, 3.0) == 0.5
     assert voice._effective(999, 3.0) == 30.0
-    assert voice._effective("not-a-number", 4.0) == 4.0
+    # A non-numeric string must fall back to the default, not raise.
+    assert voice._effective("not-a-number", 4.0) == 4.0  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
