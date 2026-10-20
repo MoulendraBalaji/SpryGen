@@ -33,12 +33,29 @@ def describe_image(image_base64: str, prompt: str = "") -> dict:
     try:
         response = httpx.post(url, json=payload, timeout=120.0)
     except Exception as exc:  # noqa: BLE001 - connection refused / timeout
-        return {"ok": False, "code": "vision_unreachable", "error": str(exc)}
+        return {
+            "ok": False,
+            "code": "vision_unreachable",
+            "error": (
+                f"Ollama is not reachable at {_ollama_url()} ({exc}). "
+                "Screen capture needs a local Ollama vision model: install Ollama "
+                "from https://ollama.com, run `ollama pull "
+                f"{model}`, then try again."
+            ),
+        }
     if response.status_code != 200:
+        detail = ""
+        try:
+            detail = str(response.json().get("error", "") or "").strip()
+        except Exception:  # noqa: BLE001 - non-JSON body
+            detail = ""
+        hint = f" Run `ollama pull {model}` if the model is not installed." if response.status_code in (404, 500) else ""
         return {
             "ok": False,
             "code": f"vision_http_{response.status_code}",
-            "error": f"Ollama returned {response.status_code}",
+            "error": f"Ollama returned {response.status_code}"
+            + (f": {detail}" if detail else "")
+            + hint,
         }
     try:
         body = response.json()

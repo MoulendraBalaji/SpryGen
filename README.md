@@ -171,7 +171,7 @@ listed is **not** claimed.
 | Anchored fast-path + LLM tool-calling; side-effecting actions require confirmation | ✅ Implemented |
 | Per-launch token, random port, Host/Origin checks, SSRF guards, single-flight automation, ESC kill switch | ✅ Implemented |
 | LAN sync: `/status` (no secrets), `/pair` per-device tokens, `/capture`, 64 KB cap, PIN lockout | ✅ Implemented |
-| Local voice pipeline (wake word → STT → speaker lock → TTS) with fail-closed behaviour | ✅ Implemented <br /><sub>optional ML extra</sub> |
+| Local voice pipeline (wake word → STT → speaker lock → TTS) with fail-closed behaviour | ✅ Implemented <br /><sub>core stack shipped in installers; speaker lock + Kokoro are optional extras</sub> |
 | Speech-to-speech loop: voice command → chat → spoken answer | ✅ Implemented |
 | Screen understanding via `desktopCapturer` + local Ollama vision | ✅ Implemented |
 | Expo companion app (pairing, quick capture, notification relay) | ✅ Implemented |
@@ -255,7 +255,9 @@ npm install
 # 3 — Python backend dependencies
 pip install -r backend/requirements.txt
 
-# 4 — optional: the offline voice stack (wake word, STT, speaker lock, TTS)
+# 4 — optional: full offline voice extras (speaker lock + local Kokoro voice).
+#    Packaged builds already include capture, wake word and speech-to-text
+#    (pip install -r backend/requirements-voice-core.txt).
 pip install -r backend/requirements-voice.txt
 
 # 5 — optional: companion app
@@ -344,14 +346,44 @@ writing:
 
 ### Voice setup
 
-1. Install the optional stack: `pip install -r backend/requirements-voice.txt`.
-2. Open **Settings → Voice & Audio** and press **Enroll Voiceprint** (5 short samples).
-3. Flip **Automatic listening** on and say the wake phrase.
-4. Use **Test Speech (TTS)** to confirm audio output; toggle **Speak replies aloud**
-   to control whether answers are read back.
+**Packaged builds already include the core voice stack** — microphone capture,
+wake word, speech-to-text, and text-to-speech via the OS synthesizer — so
+speech-to-speech works out of the box. On first use the two models (openWakeWord
+and Whisper `base.en`, ~150 MB total) are downloaded once, then cached locally.
 
-Settings shows a live per-component readout (capture · wake · stt · speaker · tts) so
-you always know exactly what is installed and what is missing.
+From a source checkout, install the same stack with:
+
+```bash
+pip install -r backend/requirements-voice-core.txt
+```
+
+Two optional extras are **not** bundled because they pull in PyTorch (~2 GB):
+the speaker lock (`Resemblyzer`) and fully local speech synthesis (`Kokoro`).
+Install both with `pip install -r backend/requirements-voice.txt`. Without them,
+replies are spoken with the built-in OS voice and voice enrollment is disabled —
+the wake-word loop still runs.
+
+1. Open **Settings → Voice & Audio** and press **Enroll Voiceprint** (5 short
+   samples) — only available once the speaker lock is installed.
+2. Flip **Automatic listening** on and say the wake phrase.
+3. Use **Test Speech (TTS)** to confirm audio output; toggle **Speak replies
+   aloud** to control whether answers are read back.
+
+Settings shows a live per-component readout (capture · wake · stt · speaker · tts)
+so you always know exactly what is installed and what is missing.
+
+### Screen understanding
+
+Screen capture grabs a frame locally with `desktopCapturer` and asks a **local
+Ollama vision model** to describe it — the image never leaves your machine. It
+requires Ollama to be running with a vision model installed:
+
+```bash
+ollama pull llava
+```
+
+If Ollama is not running or the model is missing, the panel reports exactly that
+(plus the command to run) rather than failing silently.
 
 ---
 

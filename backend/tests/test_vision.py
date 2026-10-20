@@ -22,6 +22,9 @@ def test_unreachable_ollama_fails_closed(monkeypatch):
     result = vision.describe_image("AAAA", "what is this?")
     assert result["ok"] is False
     assert result["code"] == "vision_unreachable"
+    # The failure must tell the user exactly what to do about it.
+    assert "ollama.com" in result["error"]
+    assert "ollama pull llava" in result["error"]
 
 
 def test_http_error_fails_closed(monkeypatch):
@@ -29,6 +32,20 @@ def test_http_error_fails_closed(monkeypatch):
     result = vision.describe_image("AAAA", "describe")
     assert result["ok"] is False
     assert result["code"] == "vision_http_500"
+    assert "ollama pull" in result["error"]
+
+
+def test_missing_model_error_includes_pull_hint(monkeypatch):
+    monkeypatch.setattr(
+        vision.httpx,
+        "post",
+        lambda *_a, **_k: _Resp(404, {"error": "model 'llava' not found"}),
+    )
+    result = vision.describe_image("AAAA", "describe")
+    assert result["ok"] is False
+    assert result["code"] == "vision_http_404"
+    assert "model 'llava' not found" in result["error"]
+    assert "ollama pull llava" in result["error"]
 
 
 def test_empty_response_fails_closed(monkeypatch):

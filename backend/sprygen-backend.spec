@@ -13,7 +13,7 @@ in packaged builds.
 
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # uvicorn imports its loop / protocol implementations dynamically, so they must
 # be declared explicitly for the frozen build.
@@ -29,11 +29,35 @@ hiddenimports = [
     "dotenv",
 ] + collect_submodules("backend")
 
+# ---------------------------------------------------------------------------
+# Optional offline voice stack (PyTorch-free subset).
+#
+# The voice pipeline imports numpy / sounddevice / openwakeword / faster-whisper
+# lazily via ``__import__``, which PyInstaller cannot discover by itself — the
+# packaged app would otherwise report every component as missing and the mic
+# toggle would fail with ENGINE_FAILURE. Listing them as hidden imports makes
+# PyInstaller follow their module graphs statically; the data files (e.g.
+# sounddevice's bundled PortAudio binaries) are collected explicitly.
+#
+# Every package here is optional at build time: if it is not installed in the
+# build environment the build still succeeds and the component is simply
+# reported as missing at runtime.
+# ---------------------------------------------------------------------------
+VOICE_PACKAGES = ("numpy", "sounddevice", "openwakeword", "faster_whisper")
+hiddenimports += list(VOICE_PACKAGES)
+
+voice_datas = []
+for _pkg in VOICE_PACKAGES:
+    try:
+        voice_datas += collect_data_files(_pkg)
+    except Exception as _exc:  # not installed in this environment
+        print(f"spec: no data files for {_pkg}: {_exc}")
+
 a = Analysis(
     ["sidecar.py"],
     pathex=[os.path.abspath(".")],
     binaries=[],
-    datas=[],
+    datas=voice_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

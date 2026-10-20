@@ -28,7 +28,7 @@ export const enum VoiceErrorMsg {
   PERMISSION_DENIED = "Microphone access is blocked by the operating system.",
   DEVICE_NOT_FOUND = "No audio input device was found.",
   RECORDER_TIMEOUT = "Audio buffer starvation — recorder produced no frames.",
-  ENGINE_FAILURE = "The local voice engine is unavailable. Install backend/requirements-voice.txt.",
+  ENGINE_FAILURE = "The local voice engine is unavailable. Install backend/requirements-voice.txt (or requirements-voice-core.txt for the bundled subset).",
 }
 
 // Scoped diagnostic logger — file + console forwarding, never silent.

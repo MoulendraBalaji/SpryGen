@@ -216,8 +216,9 @@ export function ProfileSettings() {
 
         {voiceStatus?.missingComponents && voiceStatus.missingComponents.length > 0 && (
           <p className="console-meta" style={{ margin: "6px 0 0" }} data-testid="voice-missing">
-            Missing: {voiceStatus.missingComponents.join(", ")} — install the offline voice
-            stack with <code>pip install -r backend/requirements-voice.txt</code>, then
+            Missing: {voiceStatus.missingComponents.join(", ")} — packaged builds already ship
+            capture, wake word and speech-to-text. For the rest, run{" "}
+            <code>pip install -r backend/requirements-voice.txt</code> from a checkout, then
             restart the loop.
           </p>
         )}

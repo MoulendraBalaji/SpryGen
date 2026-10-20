@@ -407,12 +407,19 @@ def start(reference: list[float] | None = None, threshold: float = DEFAULT_THRES
     """Start the continuous wake-word loop with an optional speaker lock."""
     global _loop
     caps = availability()
-    missing = [name for name in ("capture", "wake", "numpy") if not caps.get(name, False)]
+    # The loop is useless without transcription, so `stt` is required too.
+    required = ("capture", "wake", "numpy", "stt")
+    missing = [name for name in required if not caps.get(name, False)]
     if missing:
         return {
             "ok": False,
             "code": "unavailable",
-            "message": f"Voice engine components not installed: {', '.join(missing)}",
+            "message": (
+                f"Voice engine components not installed: {', '.join(missing)}. "
+                "Install the offline voice stack with "
+                "`pip install -r backend/requirements-voice-core.txt` "
+                "(packaged builds ship it already)."
+            ),
         }
     with _loop_lock:
         if _loop is not None and _loop.is_alive():

@@ -1,0 +1,21 @@
+# Core offline voice stack — microphone capture, wake word and speech-to-text.
+#
+# This subset is deliberately **PyTorch-free** so it can be frozen into the
+# packaged app (PyInstaller sidecar) and shipped in the installers:
+#
+#   * numpy / sounddevice  — audio capture
+#   * openwakeword         — on-device wake-word detection (ONNX)
+#   * faster-whisper       — on-device speech-to-text (CTranslate2)
+#
+# Text-to-speech falls back to the operating system synthesiser when Kokoro is
+# not installed, so speech-to-speech works with this file alone.
+#
+#   pip install -r backend/requirements-voice-core.txt
+#
+# Models (wake-word + Whisper) are downloaded on first use. The full stack
+# (speaker lock + local Kokoro voice, pulls PyTorch) is in
+# `requirements-voice.txt`.
+numpy>=1.24
+sounddevice>=0.4.6
+openwakeword>=0.6.0
+faster-whisper>=1.0.0

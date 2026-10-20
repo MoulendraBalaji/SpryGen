@@ -21,6 +21,10 @@ release/
 build/*
 !build/icon.png
 !build/icon.ico
+# PyInstaller build/work dirs for the Python sidecar
+backend/build/
+backend/build-ci/
+backend/dist/
 .expo/
 *.tsbuildinfo
 
